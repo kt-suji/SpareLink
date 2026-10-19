@@ -2,12 +2,14 @@ mod bench;
 mod config;
 mod discovery;
 mod evaluator;
+mod gui;
 mod models;
 mod native_probe;
 mod p2p;
 
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -46,23 +48,33 @@ async fn process_and_broadcast(
     local_telemetry_holder: &Arc<RwLock<Option<LocalAgentTelemetryMessage>>>,
     latest_metrics: &Arc<RwLock<Option<String>>>,
     tx: &broadcast::Sender<String>,
+    sharing_paused: &Arc<AtomicBool>,
 ) {
-    let surplus = evaluator::evaluate_surplus_capacity_with_config(
+    let mut surplus = evaluator::evaluate_surplus_capacity_with_config(
         &metrics,
         Some(benchmark_score),
         evaluator_cfg,
     );
+
+    let is_paused = sharing_paused.load(Ordering::SeqCst);
+    if is_paused {
+        surplus.allocatable_cpu_score = Some(0);
+        surplus.allocatable_memory_gb = Some(0.0);
+        surplus.status_note = "Paused by user (一時停止中)".to_string();
+    }
+
     let known_peers = peer_manager.get_all_peers().await;
     let tailscale = peer_manager.get_tailscale_status().await;
 
     println!(
-        "[{}] CPU: {:>4.1}% | MEM: {:>4.1}% ({:.1}/{:.1}GB) | Surplus CPU: {:>5} pt | Surplus MEM: {:>4.1}GB | Peers: {} online",
+        "[{}] CPU: {:>4.1}% | MEM: {:>4.1}% ({:.1}/{:.1}GB) | Surplus CPU: {:>5} pt{} | Surplus MEM: {:>4.1}GB | Peers: {} online",
         metrics.pc_name,
         metrics.cpu_percent,
         metrics.memory_percent,
         (metrics.memory_total_gb - metrics.memory_available_gb).max(0.0),
         metrics.memory_total_gb,
         surplus.allocatable_cpu_score.unwrap_or(0),
+        if is_paused { " [PAUSED]" } else { "" },
         surplus.allocatable_memory_gb.unwrap_or(0.0),
         known_peers.iter().filter(|p| p.status == "online").count(),
     );
@@ -95,11 +107,12 @@ async fn process_and_broadcast(
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = AppConfig::load();
-
-    println!("[SpareLink] Initializing agent daemon...");
+async fn run_agent_backend(
+    config: AppConfig,
+    sharing_paused: Arc<AtomicBool>,
+    local_telemetry_holder: Arc<RwLock<Option<LocalAgentTelemetryMessage>>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("[SpareLink] Initializing agent backend daemon...");
 
     // 1. Benchmark evaluation
     let benchmark_score = if config.benchmark.manual_score > 0 {
@@ -155,8 +168,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .to_lowercase()
     };
 
-    let local_telemetry_holder = Arc::new(RwLock::new(None::<LocalAgentTelemetryMessage>));
-
     let peer_manager = Arc::new(PeerManager::new(
         local_id,
         discovery_provider,
@@ -206,10 +217,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let local_telemetry_probe = local_telemetry_holder.clone();
     let evaluator_cfg = config.evaluator.clone();
     let broadcast_interval_ms = config.agent.broadcast_interval_ms;
+    let pause_probe = sharing_paused.clone();
 
     // 3. Metrics collection probe spawn
     if has_python_script {
         let evaluator_cfg_py = evaluator_cfg.clone();
+        let pause_py = pause_probe.clone();
         match Command::new(&python_path)
             .arg(&script_path)
             .stdout(Stdio::piped())
@@ -230,6 +243,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     &local_telemetry_probe,
                                     &latest_metrics_probe,
                                     &tx_probe,
+                                    &pause_py,
                                 )
                                 .await;
                             }
@@ -247,6 +261,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     local_telemetry_probe,
                     latest_metrics_probe,
                     tx_probe,
+                    pause_probe,
                 );
             }
         }
@@ -259,6 +274,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             local_telemetry_probe,
             latest_metrics_probe,
             tx_probe,
+            pause_probe,
         );
     }
 
@@ -332,6 +348,7 @@ fn spawn_native_probe_task(
     local_telemetry_holder: Arc<RwLock<Option<LocalAgentTelemetryMessage>>>,
     latest_metrics: Arc<RwLock<Option<String>>>,
     tx: broadcast::Sender<String>,
+    sharing_paused: Arc<AtomicBool>,
 ) {
     let interval = Duration::from_millis(broadcast_interval_ms.max(500));
     tokio::spawn(async move {
@@ -347,8 +364,79 @@ fn spawn_native_probe_task(
                 &local_telemetry_holder,
                 &latest_metrics,
                 &tx,
+                &sharing_paused,
             )
             .await;
         }
     });
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = AppConfig::load();
+    let args: Vec<String> = std::env::args().collect();
+    let headless = args.iter().any(|a| a == "--headless" || a == "--no-gui");
+
+    let sharing_paused = Arc::new(AtomicBool::new(false));
+    let local_telemetry_holder = Arc::new(RwLock::new(None::<LocalAgentTelemetryMessage>));
+
+    if headless {
+        println!("[SpareLink] Running in headless mode (no GUI).");
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()?;
+        rt.block_on(run_agent_backend(config, sharing_paused, local_telemetry_holder))?;
+    } else {
+        println!("[SpareLink] Launching native monitor GUI widget...");
+        let backend_config = config.clone();
+        let backend_paused = sharing_paused.clone();
+        let backend_telemetry = local_telemetry_holder.clone();
+
+        std::thread::spawn(move || {
+            let rt = match tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(rt) => rt,
+                Err(e) => {
+                    eprintln!("[SpareLink] Failed to build Tokio runtime: {}", e);
+                    return;
+                }
+            };
+
+            if let Err(e) = rt.block_on(run_agent_backend(backend_config, backend_paused, backend_telemetry)) {
+                eprintln!("[SpareLink] Agent backend error: {}", e);
+            }
+        });
+
+        let initial_pos = gui::get_bottom_right_position(330.0, 480.0);
+        let options = eframe::NativeOptions {
+            viewport: eframe::egui::ViewportBuilder::default()
+                .with_inner_size([330.0, 480.0])
+                .with_min_inner_size([300.0, 360.0])
+                .with_position(initial_pos)
+                .with_title("SpareLink Monitor")
+                .with_always_on_top()
+                .with_decorations(true)
+                .with_resizable(true),
+            ..Default::default()
+        };
+
+        if let Err(e) = eframe::run_native(
+            "SpareLink Monitor",
+            options,
+            Box::new(move |cc| {
+                gui::SpareLinkMonitorApp::configure_theme(&cc.egui_ctx);
+                Ok(Box::new(gui::SpareLinkMonitorApp::new(
+                    local_telemetry_holder,
+                    sharing_paused,
+                )))
+            }),
+        ) {
+            eprintln!("[SpareLink] GUI runtime error: {}", e);
+        }
+
+        std::process::exit(0);
+    }
+
+    Ok(())
 }
