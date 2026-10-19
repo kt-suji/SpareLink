@@ -408,15 +408,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
 
-        let initial_pos = gui::get_bottom_right_position(330.0, 480.0);
+        let initial_pos = gui::get_bottom_right_position(360.0, 470.0);
         let options = eframe::NativeOptions {
             viewport: eframe::egui::ViewportBuilder::default()
-                .with_inner_size([330.0, 480.0])
-                .with_min_inner_size([300.0, 360.0])
+                .with_inner_size([360.0, 470.0])
+                .with_min_inner_size([330.0, 380.0])
                 .with_position(initial_pos)
                 .with_title("SpareLink Monitor")
                 .with_always_on_top()
-                .with_decorations(true)
+                .with_decorations(false)
                 .with_resizable(true),
             ..Default::default()
         };
@@ -425,7 +425,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "SpareLink Monitor",
             options,
             Box::new(move |cc| {
-                gui::SpareLinkMonitorApp::configure_theme(&cc.egui_ctx);
+                gui::SpareLinkMonitorApp::configure_theme(&cc.egui_ctx, true);
                 Ok(Box::new(gui::SpareLinkMonitorApp::new(
                     local_telemetry_holder,
                     sharing_paused,
