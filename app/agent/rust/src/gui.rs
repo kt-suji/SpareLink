@@ -87,25 +87,51 @@ pub fn show_resource_bar(
     let old_spacing = ui.spacing().item_spacing;
     ui.spacing_mut().item_spacing.x = 0.0;
 
-    // 1. 左側: 使用分 (使用中であることが一目でわかる赤/コーラル)
-    if used_bars > 0 {
-        ui.label(
-            RichText::new("|".repeat(used_bars))
-                .color(used_color)
-                .monospace()
-                .strong()
-                .size(13.0),
-        );
-    }
-    // 2. 右側: 余剰分 (グリーン)
-    if surplus_bars > 0 {
-        ui.label(
-            RichText::new("|".repeat(surplus_bars))
-                .color(surplus_color)
-                .monospace()
-                .strong()
-                .size(13.0),
-        );
+    let is_rtl = ui.layout().prefer_right_to_left();
+
+    // right_to_left の場合は先に追加した要素が右に配置されるため、
+    // [左: 使用分 (赤)] [右: 余剰分 (緑)] の順序を厳格に保持する
+    if is_rtl {
+        // 先に右側（余剰分）を追加 -> 右側に配置される
+        if surplus_bars > 0 {
+            ui.label(
+                RichText::new("|".repeat(surplus_bars))
+                    .color(surplus_color)
+                    .monospace()
+                    .strong()
+                    .size(13.0),
+            );
+        }
+        // 次に左側（使用分）を追加 -> 左側に配置される
+        if used_bars > 0 {
+            ui.label(
+                RichText::new("|".repeat(used_bars))
+                    .color(used_color)
+                    .monospace()
+                    .strong()
+                    .size(13.0),
+            );
+        }
+    } else {
+        // left_to_right では通常順序で追加
+        if used_bars > 0 {
+            ui.label(
+                RichText::new("|".repeat(used_bars))
+                    .color(used_color)
+                    .monospace()
+                    .strong()
+                    .size(13.0),
+            );
+        }
+        if surplus_bars > 0 {
+            ui.label(
+                RichText::new("|".repeat(surplus_bars))
+                    .color(surplus_color)
+                    .monospace()
+                    .strong()
+                    .size(13.0),
+            );
+        }
     }
 
     ui.spacing_mut().item_spacing = old_spacing;
@@ -125,22 +151,43 @@ pub fn show_segmented_bar(
     let old_spacing = ui.spacing().item_spacing;
     ui.spacing_mut().item_spacing.x = 0.0;
 
-    if filled > 0 {
-        ui.label(
-            RichText::new("|".repeat(filled))
-                .color(bar_color)
-                .monospace()
-                .strong()
-                .size(13.0),
-        );
-    }
-    if empty > 0 {
-        ui.label(
-            RichText::new("|".repeat(empty))
-                .color(empty_color)
-                .monospace()
-                .size(13.0),
-        );
+    let is_rtl = ui.layout().prefer_right_to_left();
+    if is_rtl {
+        if empty > 0 {
+            ui.label(
+                RichText::new("|".repeat(empty))
+                    .color(empty_color)
+                    .monospace()
+                    .size(13.0),
+            );
+        }
+        if filled > 0 {
+            ui.label(
+                RichText::new("|".repeat(filled))
+                    .color(bar_color)
+                    .monospace()
+                    .strong()
+                    .size(13.0),
+            );
+        }
+    } else {
+        if filled > 0 {
+            ui.label(
+                RichText::new("|".repeat(filled))
+                    .color(bar_color)
+                    .monospace()
+                    .strong()
+                    .size(13.0),
+            );
+        }
+        if empty > 0 {
+            ui.label(
+                RichText::new("|".repeat(empty))
+                    .color(empty_color)
+                    .monospace()
+                    .size(13.0),
+            );
+        }
     }
 
     ui.spacing_mut().item_spacing = old_spacing;
