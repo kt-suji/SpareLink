@@ -558,7 +558,7 @@ impl eframe::App for SpareLinkMonitorApp {
 
                     // ブラウザ詳細画面を開くボタン
                     if ui.button("🌐 Web詳細 ↗").clicked() {
-                        open_browser("http://localhost:5173");
+                        open_browser("http://localhost:5180");
                     }
 
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {

@@ -6,6 +6,7 @@ mod gui;
 mod models;
 mod native_probe;
 mod p2p;
+mod web_server;
 
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -282,6 +283,11 @@ async fn run_agent_backend(
     let ws_addr = format!("{}:{}", config.agent.host, config.agent.port);
     let listener = tokio::net::TcpListener::bind(&ws_addr).await?;
     println!("[SpareLink] WebSocket API & P2P listener active on ws://{}", ws_addr);
+
+    // 5. Dedicated Web Dashboard HTTP Server (Port 5180)
+    tokio::spawn(async move {
+        web_server::run_dashboard_server(5180).await;
+    });
 
     while let Ok((stream, peer_addr)) = listener.accept().await {
         let mut rx = tx.subscribe();
