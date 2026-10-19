@@ -57,7 +57,81 @@ pub fn truncate_name(name: &str, max_chars: usize) -> String {
     }
 }
 
-/// |||||||| 方式の余剰資源バーを描画 (点灯セグメント + 未点灯セグメント)
+/// |||||||| 方式の3層リソースバー用セグメント数を計算
+/// (使用中バー数, 余剰提供可能バー数, 未点灯バー数)
+pub fn calculate_multi_segment_counts(
+    used_ratio: f32,
+    surplus_ratio: f32,
+    total_bars: usize,
+) -> (usize, usize, usize) {
+    let u_ratio = used_ratio.clamp(0.0, 1.0);
+    let s_ratio = surplus_ratio.clamp(0.0, 1.0);
+
+    let mut used_bars = (u_ratio * total_bars as f32).round() as usize;
+    let mut surplus_bars = (s_ratio * total_bars as f32).round() as usize;
+
+    if used_bars > total_bars {
+        used_bars = total_bars;
+        surplus_bars = 0;
+    } else if used_bars + surplus_bars > total_bars {
+        surplus_bars = total_bars.saturating_sub(used_bars);
+    }
+    let empty_bars = total_bars.saturating_sub(used_bars + surplus_bars);
+
+    (used_bars, surplus_bars, empty_bars)
+}
+
+/// |||||||| 方式の3層リソースバーを描画
+/// [使用中 (左: used_color)] + [余剰提供可能 (中: surplus_color)] + [未点灯マージン (右: empty_color)]
+pub fn show_multi_segment_bar(
+    ui: &mut egui::Ui,
+    used_ratio: f32,
+    surplus_ratio: f32,
+    total_bars: usize,
+    used_color: Color32,
+    surplus_color: Color32,
+    empty_color: Color32,
+) {
+    let (used_bars, surplus_bars, empty_bars) =
+        calculate_multi_segment_counts(used_ratio, surplus_ratio, total_bars);
+
+    let old_spacing = ui.spacing().item_spacing;
+    ui.spacing_mut().item_spacing.x = 0.0;
+
+    // 1. 左側: 使用中 (使用していることが一目でわかる赤/コーラル)
+    if used_bars > 0 {
+        ui.label(
+            RichText::new("|".repeat(used_bars))
+                .color(used_color)
+                .monospace()
+                .strong()
+                .size(13.0),
+        );
+    }
+    // 2. 中央: 余剰提供可能分 (グリーン)
+    if surplus_bars > 0 {
+        ui.label(
+            RichText::new("|".repeat(surplus_bars))
+                .color(surplus_color)
+                .monospace()
+                .strong()
+                .size(13.0),
+        );
+    }
+    // 3. 右側: 未点灯/安全マージン (灰)
+    if empty_bars > 0 {
+        ui.label(
+            RichText::new("|".repeat(empty_bars))
+                .color(empty_color)
+                .monospace()
+                .size(13.0),
+        );
+    }
+
+    ui.spacing_mut().item_spacing = old_spacing;
+}
+
+/// |||||||| 方式の単一リソースバーを描画 (点灯セグメント + 未点灯セグメント)
 pub fn show_segmented_bar(
     ui: &mut egui::Ui,
     ratio: f32,
@@ -108,7 +182,9 @@ pub struct ThemeColors {
     pub warn: Color32,
     pub offline: Color32,
     pub ping: Color32,
+    #[allow(dead_code)]
     pub meter_base: Color32,
+    pub used_bar: Color32,
     pub unlit_bar: Color32,
     pub window_border: Color32,
 }
@@ -130,6 +206,7 @@ impl ThemeColors {
             offline: Color32::from_rgb(107, 114, 128),        // #6b7280 (オフライン灰)
             ping: Color32::from_rgb(56, 189, 248),            // #38bdf8 (高視認性スカイブルー)
             meter_base: Color32::from_rgb(148, 163, 184),     // #94a3b8
+            used_bar: Color32::from_rgb(240, 100, 79),        // #f0644f (使用中: コーラルレッド)
             unlit_bar: Color32::from_rgb(45, 55, 72),         // #2d3748 (未点灯バー)
             window_border: Color32::from_rgb(51, 65, 85),     // #334155 (外枠線)
         }
@@ -151,6 +228,7 @@ impl ThemeColors {
             offline: Color32::from_rgb(148, 163, 184),        // #94a3b8
             ping: Color32::from_rgb(2, 132, 199),             // #0284c7 (高コントラスト青)
             meter_base: Color32::from_rgb(100, 116, 139),     // #64748b
+            used_bar: Color32::from_rgb(225, 29, 72),         // #e11d48 (使用中: クリムゾンレッド)
             unlit_bar: Color32::from_rgb(226, 232, 240),      // #e2e8f0 (未点灯バー)
             window_border: Color32::from_rgb(148, 163, 184),  // #94a3b8 (外枠線)
         }
@@ -376,13 +454,17 @@ impl eframe::App for SpareLinkMonitorApp {
                                         ui.label(RichText::new("⏸ 共有停止中").strong().size(12.0).color(theme.warn));
                                     } else {
                                         let surplus_pt = telem.surplus.allocatable_cpu_score.unwrap_or(0);
-                                        let ratio = if let Some(base) = telem.cpu_benchmark_score {
-                                            if base > 0 { (surplus_pt as f32 / base as f32).clamp(0.0, 1.0) } else { 0.5 }
-                                        } else { 0.5 };
+                                        let base = telem.cpu_benchmark_score.unwrap_or(0);
+                                        let surplus_ratio = if base > 0 {
+                                            (surplus_pt as f32 / base as f32).clamp(0.0, 1.0)
+                                        } else {
+                                            0.5
+                                        };
+                                        let used_ratio = (telem.cpu_percent / 100.0).clamp(0.0, 1.0) as f32;
 
                                         ui.label(RichText::new(format!("{} pt", format_thousands(surplus_pt))).strong().size(12.0).color(theme.ok));
                                         ui.add_space(4.0);
-                                        show_segmented_bar(ui, ratio, 8, theme.ok, theme.unlit_bar);
+                                        show_multi_segment_bar(ui, used_ratio, surplus_ratio, 8, theme.used_bar, theme.ok, theme.unlit_bar);
                                     }
                                 });
                             });
@@ -393,7 +475,7 @@ impl eframe::App for SpareLinkMonitorApp {
                             ui.horizontal(|ui| {
                                 ui.label(RichText::new("CPU:").size(11.0).color(theme.text_muted));
                                 let cpu_ratio = (telem.cpu_percent / 100.0).clamp(0.0, 1.0) as f32;
-                                let cpu_bar_color = if telem.cpu_percent > 85.0 { theme.warn } else { theme.accent };
+                                let cpu_bar_color = if telem.cpu_percent > 85.0 { theme.warn } else { theme.used_bar };
                                 show_segmented_bar(ui, cpu_ratio, 6, cpu_bar_color, theme.unlit_bar);
                                 ui.label(RichText::new(format!("{:>4.1}%", telem.cpu_percent)).monospace().size(11.0).color(theme.text_secondary));
 
@@ -402,7 +484,7 @@ impl eframe::App for SpareLinkMonitorApp {
                                 ui.label(RichText::new("MEM:").size(11.0).color(theme.text_muted));
                                 let mem_ratio = (telem.memory_percent / 100.0).clamp(0.0, 1.0) as f32;
                                 let used_gb = (telem.memory_total_gb - telem.memory_available_gb).max(0.0);
-                                show_segmented_bar(ui, mem_ratio, 6, theme.meter_base, theme.unlit_bar);
+                                show_segmented_bar(ui, mem_ratio, 6, theme.used_bar, theme.unlit_bar);
                                 ui.label(RichText::new(format!("{:.0}% ({:.1}G)", telem.memory_percent, used_gb)).monospace().size(11.0).color(theme.text_secondary));
                             });
                         });
@@ -455,7 +537,7 @@ impl eframe::App for SpareLinkMonitorApp {
                 }
 
                 // -------------------------------------------------------------
-                // 4. P2P ピア一覧 (デバイス名省略 + |||||||| バー + pt + Ping)
+                // 4. P2P ピア一覧 (デバイス名省略 + |||||||| 3層バー + pt + Ping)
                 // -------------------------------------------------------------
                 let peers = self.cached_telemetry.as_ref().and_then(|t| t.peers.as_ref());
                 let online_count = peers.map(|p| p.iter().filter(|n| n.status == "online").count()).unwrap_or(0);
@@ -520,17 +602,19 @@ impl eframe::App for SpareLinkMonitorApp {
 
                                                     ui.add_space(4.0);
 
-                                                    // |||||||| バー
-                                                    let ratio = if is_online {
+                                                    // |||||||| バー: 左に使用中(赤/コーラル)、中に余剰(緑)、右に空き(灰)
+                                                    let (used_ratio, surplus_ratio) = if is_online {
                                                         let score = p.surplus.allocatable_cpu_score.unwrap_or(0);
-                                                        if let Some(base) = p.cpu_benchmark_score {
+                                                        let s_ratio = if let Some(base) = p.cpu_benchmark_score {
                                                             if base > 0 { (score as f32 / base as f32).clamp(0.0, 1.0) } else { 0.5 }
-                                                        } else { 0.5 }
+                                                        } else { 0.5 };
+                                                        let u_ratio = (p.cpu_percent.unwrap_or(0.0) / 100.0).clamp(0.0, 1.0) as f32;
+                                                        (u_ratio, s_ratio)
                                                     } else {
-                                                        0.0
+                                                        (0.0, 0.0)
                                                     };
-                                                    let bar_col = if is_online { theme.ok } else { theme.offline };
-                                                    show_segmented_bar(ui, ratio, 8, bar_col, theme.unlit_bar);
+                                                    let surplus_col = if is_online { theme.ok } else { theme.offline };
+                                                    show_multi_segment_bar(ui, used_ratio, surplus_ratio, 8, theme.used_bar, surplus_col, theme.unlit_bar);
                                                 });
                                             });
                                         }
@@ -591,6 +675,21 @@ mod tests {
     fn test_truncate_name() {
         assert_eq!(truncate_name("WINSERVER", 10), "WINSERVER");
         assert_eq!(truncate_name("DESKTOP-SNC5OE2", 10), "DESKTOP-S…");
+    }
+
+    #[test]
+    fn test_calculate_multi_segment_counts() {
+        // 25% used, 50% surplus on 8 bars -> 2 used, 4 surplus, 2 empty
+        assert_eq!(calculate_multi_segment_counts(0.25, 0.50, 8), (2, 4, 2));
+
+        // 0% used, 0% surplus on 8 bars -> 0 used, 0 surplus, 8 empty
+        assert_eq!(calculate_multi_segment_counts(0.0, 0.0, 8), (0, 0, 8));
+
+        // 100% used on 8 bars -> 8 used, 0 surplus, 0 empty
+        assert_eq!(calculate_multi_segment_counts(1.0, 0.5, 8), (8, 0, 0));
+
+        // Overflow protection: 80% used (6 bars) + 50% surplus (4 bars) -> 6 used, 2 surplus, 0 empty
+        assert_eq!(calculate_multi_segment_counts(0.8, 0.5, 8), (6, 2, 0));
     }
 
     #[test]

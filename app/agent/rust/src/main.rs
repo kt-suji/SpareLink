@@ -290,6 +290,7 @@ async fn run_agent_backend(
     });
 
     while let Ok((stream, peer_addr)) = listener.accept().await {
+        let _ = stream.set_nodelay(true);
         let mut rx = tx.subscribe();
         let latest_metrics = latest_metrics.clone();
         let peer_manager_ws = peer_manager.clone();

@@ -5,7 +5,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::RwLock;
 use tokio::time::sleep;
-use tokio_tungstenite::connect_async;
+use tokio_tungstenite::client_async;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::discovery::{DiscoveredPeer, PeerDiscoveryProvider};
@@ -255,10 +255,10 @@ impl PeerManager {
         });
     }
 
-    /// 特定のピアに対してWebSocket Pingを試行し、応答テレメトリと遅延を記録する
+    /// 特定のピアに対してWebSocket Pingを試行し、応答テレメトリと正確なPing遅延(ms)を記録する
     async fn probe_peer(&self, peer: &DiscoveredPeer, local_telemetry: LocalAgentTelemetryMessage) {
         let ws_url = peer.ws_url();
-        let start = Instant::now();
+        let sock_addr = peer.socket_address();
 
         let ping_msg = P2PMessage::Ping {
             sender_id: self.local_id.clone(),
@@ -270,27 +270,41 @@ impl PeerManager {
             telemetry: local_telemetry,
         };
 
-        // 1.5秒タイムアウトで接続試行
+        // 1.5秒タイムアウトで接続およびPing/Pong計測
         let probe_result = tokio::time::timeout(Duration::from_millis(1500), async {
-            let (mut ws_stream, _) = connect_async(&ws_url).await?;
+            // 1. 純粋なTCPハンドシェイク遅延 (SYN -> SYN-ACKのネットワーク往復RTT)
+            let tcp_start = Instant::now();
+            let tcp_stream = tokio::net::TcpStream::connect(&sock_addr).await?;
+            let tcp_rtt_ms = tcp_start.elapsed().as_millis() as u64;
+
+            // 2. Nagleアルゴリズム無効化 (WindowsのDelayed ACK 40ms待機を回避)
+            let _ = tcp_stream.set_nodelay(true);
+
+            // 3. WebSocketプロトコルアップグレード
+            let (mut ws_stream, _) = client_async(&ws_url, tcp_stream).await?;
+
+            // 4. Ping送信からPong受信までの往復RTT計測
             let ping_json = serde_json::to_string(&ping_msg)?;
+            let ping_start = Instant::now();
             ws_stream.send(Message::Text(ping_json.into())).await?;
 
             while let Some(Ok(Message::Text(reply))) = ws_stream.next().await {
                 if let Ok(msg) = serde_json::from_str::<P2PMessage>(&reply) {
                     if let P2PMessage::Pong { telemetry, .. } = msg {
-                        return Ok::<LocalAgentTelemetryMessage, Box<dyn std::error::Error + Send + Sync>>(telemetry);
+                        let app_rtt_ms = ping_start.elapsed().as_millis() as u64;
+                        let latency = app_rtt_ms.min(tcp_rtt_ms);
+                        return Ok::<(LocalAgentTelemetryMessage, u64), Box<dyn std::error::Error + Send + Sync>>((telemetry, latency));
                     }
                 } else if let Ok(telem) = serde_json::from_str::<LocalAgentTelemetryMessage>(&reply) {
-                    return Ok::<LocalAgentTelemetryMessage, Box<dyn std::error::Error + Send + Sync>>(telem);
+                    let app_rtt_ms = ping_start.elapsed().as_millis() as u64;
+                    let latency = app_rtt_ms.min(tcp_rtt_ms);
+                    return Ok::<(LocalAgentTelemetryMessage, u64), Box<dyn std::error::Error + Send + Sync>>((telem, latency));
                 }
             }
 
-            Err::<LocalAgentTelemetryMessage, Box<dyn std::error::Error + Send + Sync>>("応答を受信できませんでした".into())
+            Err::<(LocalAgentTelemetryMessage, u64), Box<dyn std::error::Error + Send + Sync>>("応答を受信できませんでした".into())
         })
         .await;
-
-        let elapsed_ms = start.elapsed().as_millis().max(1) as u64;
 
         let mut lock = self.peers.write().await;
         let target_key = find_matching_peer_key(&lock, &peer.id, &peer.name)
@@ -298,10 +312,10 @@ impl PeerManager {
 
         if let Some(entry) = lock.get_mut(&target_key) {
             match probe_result {
-                Ok(Ok(telemetry)) => {
+                Ok(Ok((telemetry, latency_ms))) => {
                     // P2P疎通成功！ 相手の最新実測値と実測Ping遅延(ms)を反映
                     entry.status = "online".to_string();
-                    entry.latency_ms = Some(elapsed_ms);
+                    entry.latency_ms = Some(latency_ms);
                     entry.last_seen_secs_ago = Some(0);
                     entry.cpu_cores = Some(telemetry.cpu_cores);
                     entry.cpu_percent = Some(telemetry.cpu_percent);
@@ -316,7 +330,7 @@ impl PeerManager {
                     let is_recently_seen = entry.last_seen_secs_ago.map(|s| s < 15).unwrap_or(false);
                     if is_recently_seen {
                         if entry.latency_ms.is_none() {
-                            entry.latency_ms = Some(1);
+                            entry.latency_ms = Some(0);
                         }
                     } else {
                         entry.status = "offline".to_string();
