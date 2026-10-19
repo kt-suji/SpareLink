@@ -1,0 +1,40 @@
+# SpareLink 統合設定ファイル (sparelink.toml)
+# ドキュメント: https://github.com/SpareLink/sparelink
+
+[agent]
+# ノード表示名（空文字の場合はOSのホスト名を自動検出）
+node_name = ""
+# WebSocketおよびP2PのバインドIPアドレス
+host = "0.0.0.0"
+# WebSocketおよびP2Pの待受ポート番号
+port = 3001
+# ローカル実測値の配信間隔 (ミリ秒)
+broadcast_interval_ms = 2000
+
+[discovery]
+# ピア探索方式 ("tailscale" | "wireguard" | "static" | "lan")
+transport = "tailscale"
+# 外部ピア一覧JSONファイルのパス（wireguard/staticモードで利用、省略可）
+# config_path = "wireguard_peers.json"
+# ピアの自動スキャン探索間隔 (秒)
+scan_interval_secs = 10
+# P2Pハートビート（応答遅延・余剰資源プローブ）の間隔 (秒)
+probe_interval_secs = 4
+# 固定接続先ピアの一覧（例: ["100.64.0.2:3001", "192.168.1.10:3001"]）
+static_peers = []
+
+[evaluator]
+# 新規Jobの割当を安全停止するCPU使用率の閾値 (%)
+high_load_threshold = 80.0
+# ホストPCの操作快適性を保つために確保するCPU安全マージン (%)
+safety_headroom = 20.0
+# OSおよびバックグラウンドサービスのために最低限確保する空き物理メモリ (GB)
+min_memory_margin_gb = 4.0
+
+[benchmark]
+# 起動時に並列CPUマイクロベンチマークを自動実行するかどうか
+enabled = true
+# 1論理コアあたりの演算反復回数（デフォルト: 20000000、約0.08〜0.15秒で完了）
+iterations_per_core = 20000000
+# ベンチマークスコアの手動固定値（0 の場合は実測値を使用）
+manual_score = 0
