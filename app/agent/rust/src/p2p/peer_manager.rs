@@ -135,6 +135,9 @@ impl PeerManager {
             entry.memory_percent = Some(telemetry.memory_percent);
             entry.memory_available_gb = Some(telemetry.memory_available_gb);
             entry.surplus = telemetry.surplus.clone();
+            if entry.latency_ms.is_none() {
+                entry.latency_ms = Some(1);
+            }
         }
 
         // 自身の最新テレメトリを載せてPongを返信
@@ -273,22 +276,30 @@ impl PeerManager {
             let ping_json = serde_json::to_string(&ping_msg)?;
             ws_stream.send(Message::Text(ping_json.into())).await?;
 
-            if let Some(Ok(Message::Text(reply))) = ws_stream.next().await {
-                let msg: P2PMessage = serde_json::from_str(&reply)?;
-                return Ok::<P2PMessage, Box<dyn std::error::Error + Send + Sync>>(msg);
+            while let Some(Ok(Message::Text(reply))) = ws_stream.next().await {
+                if let Ok(msg) = serde_json::from_str::<P2PMessage>(&reply) {
+                    if let P2PMessage::Pong { telemetry, .. } = msg {
+                        return Ok::<LocalAgentTelemetryMessage, Box<dyn std::error::Error + Send + Sync>>(telemetry);
+                    }
+                } else if let Ok(telem) = serde_json::from_str::<LocalAgentTelemetryMessage>(&reply) {
+                    return Ok::<LocalAgentTelemetryMessage, Box<dyn std::error::Error + Send + Sync>>(telem);
+                }
             }
 
-            Err::<P2PMessage, Box<dyn std::error::Error + Send + Sync>>("応答を受信できませんでした".into())
+            Err::<LocalAgentTelemetryMessage, Box<dyn std::error::Error + Send + Sync>>("応答を受信できませんでした".into())
         })
         .await;
 
-        let elapsed_ms = start.elapsed().as_millis() as u64;
+        let elapsed_ms = start.elapsed().as_millis().max(1) as u64;
 
         let mut lock = self.peers.write().await;
-        if let Some(entry) = lock.get_mut(&peer.id) {
+        let target_key = find_matching_peer_key(&lock, &peer.id, &peer.name)
+            .unwrap_or_else(|| peer.id.clone());
+
+        if let Some(entry) = lock.get_mut(&target_key) {
             match probe_result {
-                Ok(Ok(P2PMessage::Pong { telemetry, .. })) => {
-                    // P2P疎通成功！ 相手の最新実測値と余剰資源を反映
+                Ok(Ok(telemetry)) => {
+                    // P2P疎通成功！ 相手の最新実測値と実測Ping遅延(ms)を反映
                     entry.status = "online".to_string();
                     entry.latency_ms = Some(elapsed_ms);
                     entry.last_seen_secs_ago = Some(0);
@@ -302,8 +313,12 @@ impl PeerManager {
                 }
                 _ => {
                     // 相手先PCへの外向きProbeが失敗した場合でも、直近でPingを受信している場合はオンラインを維持
-                    let is_recently_seen = entry.last_seen_secs_ago.map(|s| s < 12).unwrap_or(false);
-                    if !is_recently_seen {
+                    let is_recently_seen = entry.last_seen_secs_ago.map(|s| s < 15).unwrap_or(false);
+                    if is_recently_seen {
+                        if entry.latency_ms.is_none() {
+                            entry.latency_ms = Some(1);
+                        }
+                    } else {
                         entry.status = "offline".to_string();
                         entry.latency_ms = None;
                     }

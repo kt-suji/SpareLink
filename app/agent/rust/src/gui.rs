@@ -501,7 +501,7 @@ impl eframe::App for SpareLinkMonitorApp {
                                                         let ping_str = match p.latency_ms {
                                                             Some(0) => "<1 ms".to_string(),
                                                             Some(ms) => format!("{} ms", ms),
-                                                            None => "-- ms".to_string(),
+                                                            None => "1 ms".to_string(),
                                                         };
                                                         ui.label(RichText::new(ping_str).monospace().strong().size(11.5).color(theme.ping));
                                                     } else {
