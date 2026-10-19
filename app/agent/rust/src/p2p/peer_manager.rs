@@ -14,6 +14,46 @@ use crate::models::{
 };
 use super::protocol::{P2PMessage, PeerNodeState};
 
+/// 受信したPingの送信元情報と既存ピアリストを照合し、同一ノードのキーを特定する
+fn find_matching_peer_key(
+    peers: &HashMap<String, PeerNodeState>,
+    sender_id: &str,
+    sender_name: &str,
+) -> Option<String> {
+    let s_id_lower = sender_id.to_lowercase();
+    let s_name_lower = sender_name.to_lowercase();
+    let ts_key = format!("tailscale:{}", s_id_lower);
+    let ts_name_key = format!("tailscale:{}", s_name_lower);
+
+    if peers.contains_key(sender_id) {
+        return Some(sender_id.to_string());
+    }
+    if peers.contains_key(&ts_key) {
+        return Some(ts_key);
+    }
+    if peers.contains_key(&ts_name_key) {
+        return Some(ts_name_key);
+    }
+
+    for (k, v) in peers {
+        let k_clean = k.strip_prefix("tailscale:").unwrap_or(k).to_lowercase();
+        let id_clean = v.id.strip_prefix("tailscale:").unwrap_or(&v.id).to_lowercase();
+        let name_clean = v.name.to_lowercase();
+
+        if k_clean == s_id_lower
+            || k_clean == s_name_lower
+            || id_clean == s_id_lower
+            || id_clean == s_name_lower
+            || name_clean == s_id_lower
+            || name_clean == s_name_lower
+        {
+            return Some(k.clone());
+        }
+    }
+
+    None
+}
+
 /// Manages peer discovery endpoints, P2P handshake heartbeats, and topology state.
 pub struct PeerManager {
     local_id: String,
@@ -58,8 +98,17 @@ impl PeerManager {
     ) -> Option<P2PMessage> {
         {
             let mut lock = self.peers.write().await;
-            let entry = lock.entry(sender_id.clone()).or_insert_with(|| PeerNodeState {
-                id: sender_id.clone(),
+            let target_key = find_matching_peer_key(&lock, &sender_id, &sender_name)
+                .unwrap_or_else(|| {
+                    if sender_id.starts_with("tailscale:") {
+                        sender_id.clone()
+                    } else {
+                        format!("tailscale:{}", sender_id.to_lowercase())
+                    }
+                });
+
+            let entry = lock.entry(target_key.clone()).or_insert_with(|| PeerNodeState {
+                id: target_key.clone(),
                 name: sender_name.clone(),
                 address: sender_id.clone(),
                 os: Some(telemetry.os.clone()),
@@ -77,7 +126,11 @@ impl PeerManager {
             });
 
             entry.status = "online".to_string();
+            entry.name = sender_name.clone();
             entry.last_seen_secs_ago = Some(0);
+            entry.cpu_cores = Some(telemetry.cpu_cores);
+            entry.memory_total_gb = Some(telemetry.memory_total_gb);
+            entry.cpu_benchmark_score = telemetry.cpu_benchmark_score;
             entry.cpu_percent = Some(telemetry.cpu_percent);
             entry.memory_percent = Some(telemetry.memory_percent);
             entry.memory_available_gb = Some(telemetry.memory_available_gb);
@@ -165,6 +218,20 @@ impl PeerManager {
                 };
 
                 if let Some(telemetry) = my_telem {
+                    // ピアの前回疎通からの経過秒数を更新（15秒以上疎通が途絶えたらオフライン化）
+                    {
+                        let mut p_lock = manager_ping.peers.write().await;
+                        for p in p_lock.values_mut() {
+                            if let Some(ref mut sec) = p.last_seen_secs_ago {
+                                *sec = sec.saturating_add(probe_interval_secs);
+                                if *sec > 15 {
+                                    p.status = "offline".to_string();
+                                    p.latency_ms = None;
+                                }
+                            }
+                        }
+                    }
+
                     let targets = {
                         let end_lock = manager_ping.discovered_endpoints.read().await;
                         end_lock.clone()
@@ -234,9 +301,12 @@ impl PeerManager {
                     entry.surplus = telemetry.surplus;
                 }
                 _ => {
-                    // 相手先PCでSpareLink Agentが未稼働、またはネットワーク不通
-                    entry.status = "offline".to_string();
-                    entry.latency_ms = None;
+                    // 相手先PCへの外向きProbeが失敗した場合でも、直近でPingを受信している場合はオンラインを維持
+                    let is_recently_seen = entry.last_seen_secs_ago.map(|s| s < 12).unwrap_or(false);
+                    if !is_recently_seen {
+                        entry.status = "offline".to_string();
+                        entry.latency_ms = None;
+                    }
                 }
             }
         }
