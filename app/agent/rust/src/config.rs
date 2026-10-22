@@ -125,7 +125,8 @@ impl AppConfig {
         config
     }
 
-    fn find_and_parse_config() -> Option<Self> {
+    /// Finds candidate paths for sparelink.toml.
+    pub fn find_config_file_path() -> Option<PathBuf> {
         let candidate_paths = vec![
             env::var("SPARELINK_CONFIG").ok().map(PathBuf::from),
             Some(PathBuf::from("sparelink.toml")),
@@ -138,21 +139,36 @@ impl AppConfig {
 
         for path in candidate_paths.into_iter().flatten() {
             if path.is_file() {
-                if let Ok(content) = fs::read_to_string(&path) {
-                    match toml::from_str::<AppConfig>(&content) {
-                        Ok(parsed) => {
-                            println!("[SpareLink] Loaded config from {}", path.display());
-                            return Some(parsed);
-                        }
-                        Err(e) => {
-                            eprintln!("[SpareLink] Warning: Failed to parse {}: {}", path.display(), e);
-                        }
+                return Some(path);
+            }
+        }
+        None
+    }
+
+    fn find_and_parse_config() -> Option<Self> {
+        if let Some(path) = Self::find_config_file_path() {
+            if let Ok(content) = fs::read_to_string(&path) {
+                match toml::from_str::<AppConfig>(&content) {
+                    Ok(parsed) => {
+                        println!("[SpareLink] Loaded config from {}", path.display());
+                        return Some(parsed);
+                    }
+                    Err(e) => {
+                        eprintln!("[SpareLink] Warning: Failed to parse {}: {}", path.display(), e);
                     }
                 }
             }
         }
-
         None
+    }
+
+    /// Saves the current configuration to sparelink.toml.
+    pub fn save_to_file(&self) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+        let path = Self::find_config_file_path().unwrap_or_else(|| PathBuf::from("sparelink.toml"));
+        let toml_str = toml::to_string_pretty(self)?;
+        fs::write(&path, toml_str)?;
+        println!("[SpareLink] Saved configuration to {}", path.display());
+        Ok(path)
     }
 
     fn apply_env_overrides(&mut self) {

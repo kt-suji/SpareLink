@@ -2,6 +2,7 @@ import { useState } from 'react'
 import './App.css'
 import { NodeDetail } from './components/NodeDetail'
 import { NodeTable } from './components/NodeTable'
+import { SettingsPanel } from './components/SettingsPanel'
 import { SourceTag } from './components/SourceTag'
 import { Topology } from './components/Topology'
 import { sampleEvents } from './data/sampleData'
@@ -11,16 +12,17 @@ import { summarize } from './lib/networkSummary'
 const events = sampleEvents
 
 const NAV_ITEMS = [
-  { label: 'ネットワーク概要', implemented: true },
-  { label: 'PC一覧', implemented: false },
-  { label: '共通Job管理', implemented: false },
-  { label: 'ログ', implemented: false },
-  { label: '設定', implemented: false },
+  { id: 'overview', label: 'ネットワーク概要', implemented: true },
+  { id: 'nodes', label: 'PC一覧', implemented: false },
+  { id: 'jobs', label: '共通Job管理', implemented: false },
+  { id: 'logs', label: 'ログ', implemented: false },
+  { id: 'settings', label: '設定', implemented: true },
 ]
 
 function App() {
   const { snapshot, agentConnected, tailscale } = useNetworkSnapshot()
   const [selectedId, setSelectedId] = useState(snapshot.localNodeId)
+  const [activeTab, setActiveTab] = useState<'overview' | 'settings'>('overview')
 
   const { nodes, links, localNodeId, source } = snapshot
   const localNode = nodes.find((n) => n.id === localNodeId)
@@ -88,13 +90,18 @@ function App() {
       <div className="body">
         <nav className="sidebar" aria-label="メインメニュー">
           <ul>
-            {NAV_ITEMS.map((item, i) => (
-              <li key={item.label}>
+            {NAV_ITEMS.map((item) => (
+              <li key={item.id}>
                 <button
                   type="button"
-                  className={`nav-item ${i === 0 ? 'is-active' : ''}`}
+                  className={`nav-item ${activeTab === item.id ? 'is-active' : ''}`}
                   disabled={!item.implemented}
-                  aria-current={i === 0 ? 'page' : undefined}
+                  onClick={() => {
+                    if (item.implemented) {
+                      setActiveTab(item.id as 'overview' | 'settings')
+                    }
+                  }}
+                  aria-current={activeTab === item.id ? 'page' : undefined}
                 >
                   <span>{item.label}</span>
                   {!item.implemented && <span className="nav-soon">未実装</span>}
@@ -105,7 +112,11 @@ function App() {
         </nav>
 
         <main className="main">
-          <div className="page-head">
+          {activeTab === 'settings' ? (
+            <SettingsPanel localNode={localNode} agentConnected={agentConnected} />
+          ) : (
+            <>
+              <div className="page-head">
             <div>
               <h1>ネットワーク全体の状況</h1>
               <p className="page-desc">
@@ -364,6 +375,8 @@ function App() {
               </section>
             </div>
           </div>
+          </>
+        )}
         </main>
       </div>
 

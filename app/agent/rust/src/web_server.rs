@@ -5,8 +5,8 @@ use tokio::net::TcpListener;
 const EMBEDDED_INDEX_HTML: &[u8] = include_bytes!("../../../front/dist/index.html");
 const EMBEDDED_FAVICON_SVG: &[u8] = include_bytes!("../../../front/dist/favicon.svg");
 const EMBEDDED_ICONS_SVG: &[u8] = include_bytes!("../../../front/dist/icons.svg");
-const EMBEDDED_JS: &[u8] = include_bytes!("../../../front/dist/assets/index-BcaUYHQG.js");
-const EMBEDDED_CSS: &[u8] = include_bytes!("../../../front/dist/assets/index-D1mEjTrr.css");
+const EMBEDDED_JS: &[u8] = include_bytes!("../../../front/dist/assets/index-DeFenuvN.js");
+const EMBEDDED_CSS: &[u8] = include_bytes!("../../../front/dist/assets/index-CLccjvKd.css");
 
 fn get_content_type(path: &str) -> &'static str {
     if path.ends_with(".html") || path == "/" {
@@ -68,8 +68,12 @@ fn resolve_asset(req_path: &str) -> (&'static str, Vec<u8>) {
     }
 }
 
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use crate::config::AppConfig;
+
 /// 専用のSpareLink WebダッシュボードHTTP配信サーバー (ポート 5180)
-pub async fn run_dashboard_server(port: u16) {
+pub async fn run_dashboard_server(port: u16, shared_config: Arc<RwLock<AppConfig>>) {
     let addr = format!("0.0.0.0:{}", port);
     let listener = match TcpListener::bind(&addr).await {
         Ok(l) => {
@@ -89,8 +93,9 @@ pub async fn run_dashboard_server(port: u16) {
     };
 
     while let Ok((mut stream, _)) = listener.accept().await {
+        let config_clone = shared_config.clone();
         tokio::spawn(async move {
-            let mut buf = [0u8; 2048];
+            let mut buf = [0u8; 8192];
             let n = match stream.read(&mut buf).await {
                 Ok(n) if n > 0 => n,
                 _ => return,
@@ -99,9 +104,102 @@ pub async fn run_dashboard_server(port: u16) {
             let req_str = String::from_utf8_lossy(&buf[..n]);
             let first_line = req_str.lines().next().unwrap_or("");
             let mut parts = first_line.split_whitespace();
-            let _method = parts.next().unwrap_or("GET");
-            let path = parts.next().unwrap_or("/");
+            let method = parts.next().unwrap_or("GET");
+            let raw_path = parts.next().unwrap_or("/");
+            let path = raw_path.split('?').next().unwrap_or("/");
 
+            // 1. REST API: 設定の取得・更新 (/api/config)
+            if path == "/api/config" {
+                if method == "OPTIONS" {
+                    let resp = "HTTP/1.1 204 No Content\r\n\
+                                Access-Control-Allow-Origin: *\r\n\
+                                Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS\r\n\
+                                Access-Control-Allow-Headers: Content-Type\r\n\
+                                Connection: close\r\n\r\n";
+                    let _ = stream.write_all(resp.as_bytes()).await;
+                    let _ = stream.flush().await;
+                    return;
+                } else if method == "GET" {
+                    let cfg = config_clone.read().await;
+                    let json = serde_json::to_string_pretty(&*cfg).unwrap_or_else(|_| "{}".to_string());
+                    let header = format!(
+                        "HTTP/1.1 200 OK\r\n\
+                         Content-Type: application/json; charset=utf-8\r\n\
+                         Content-Length: {}\r\n\
+                         Access-Control-Allow-Origin: *\r\n\
+                         Cache-Control: no-cache\r\n\
+                         Connection: close\r\n\r\n",
+                        json.len()
+                    );
+                    let _ = stream.write_all(header.as_bytes()).await;
+                    let _ = stream.write_all(json.as_bytes()).await;
+                    let _ = stream.flush().await;
+                    return;
+                } else if method == "POST" || method == "PUT" {
+                    let body_str = if let Some(idx) = req_str.find("\r\n\r\n") {
+                        &req_str[idx + 4..]
+                    } else if let Some(idx) = req_str.find("\n\n") {
+                        &req_str[idx + 2..]
+                    } else {
+                        ""
+                    };
+
+                    match serde_json::from_str::<AppConfig>(body_str.trim()) {
+                        Ok(new_cfg) => {
+                            // メモリ上の設定オブジェクトを即時更新
+                            {
+                                let mut lock = config_clone.write().await;
+                                *lock = new_cfg.clone();
+                            }
+                            // sparelink.toml へ永続化
+                            let save_res = new_cfg.save_to_file();
+                            let msg = match save_res {
+                                Ok(p) => format!("設定を保存し、{} へ反映しました", p.display()),
+                                Err(e) => format!("設定を適用しましたが、ファイル保存に失敗しました: {}", e),
+                            };
+
+                            let resp_json = serde_json::json!({
+                                "status": "ok",
+                                "message": msg,
+                                "config": new_cfg
+                            }).to_string();
+
+                            let header = format!(
+                                "HTTP/1.1 200 OK\r\n\
+                                 Content-Type: application/json; charset=utf-8\r\n\
+                                 Content-Length: {}\r\n\
+                                 Access-Control-Allow-Origin: *\r\n\
+                                 Connection: close\r\n\r\n",
+                                resp_json.len()
+                            );
+                            let _ = stream.write_all(header.as_bytes()).await;
+                            let _ = stream.write_all(resp_json.as_bytes()).await;
+                            let _ = stream.flush().await;
+                            return;
+                        }
+                        Err(e) => {
+                            let err_json = serde_json::json!({
+                                "status": "error",
+                                "message": format!("設定JSONの解析に失敗しました: {}", e)
+                            }).to_string();
+                            let header = format!(
+                                "HTTP/1.1 400 Bad Request\r\n\
+                                 Content-Type: application/json; charset=utf-8\r\n\
+                                 Content-Length: {}\r\n\
+                                 Access-Control-Allow-Origin: *\r\n\
+                                 Connection: close\r\n\r\n",
+                                err_json.len()
+                            );
+                            let _ = stream.write_all(header.as_bytes()).await;
+                            let _ = stream.write_all(err_json.as_bytes()).await;
+                            let _ = stream.flush().await;
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // 2. 静的フロントエンド配信
             let (content_type, body) = resolve_asset(path);
 
             let header = format!(

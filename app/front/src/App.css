@@ -1439,3 +1439,328 @@ body {
 .ts-value--ts-warn {
   color: #eab308;
 }
+
+/* ==================================================================
+ * 設定画面 (SettingsPanel) スタイル
+ * ================================================================== */
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 960px;
+}
+
+.settings-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.settings-alert--success {
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  color: #4ade80;
+}
+
+.settings-alert--error {
+  background: rgba(240, 100, 79, 0.12);
+  border: 1px solid rgba(240, 100, 79, 0.4);
+  color: #ff8573;
+}
+
+.settings-alert--warn {
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  color: #fbbf24;
+}
+
+.alert-icon {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 18px 20px;
+}
+
+.settings-card-header {
+  position: relative;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--line-soft);
+  padding-bottom: 12px;
+}
+
+.card-badge {
+  display: inline-block;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 2px;
+  margin-bottom: 6px;
+}
+
+.settings-card-header h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text);
+}
+
+.card-sub {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px 22px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-group--full {
+  grid-column: 1 / -1;
+}
+
+.form-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.val-preview {
+  font-weight: 600;
+  color: var(--ok);
+  font-size: 13.5px;
+}
+
+.val-preview.is-warn {
+  color: var(--warn);
+}
+
+.form-desc {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.45;
+  margin: 0;
+}
+
+.form-desc code {
+  background: var(--canvas);
+  color: var(--text-2);
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-family: var(--font-mono);
+}
+
+/* スライダー */
+.slider {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--meter-track);
+  outline: none;
+  cursor: pointer;
+  margin: 6px 0;
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--ok);
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.slider--warn::-webkit-slider-thumb {
+  background: var(--warn);
+}
+
+/* 入力欄 */
+.text-input,
+.select-input,
+.textarea-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 3px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.text-input:focus,
+.select-input:focus,
+.textarea-input:focus {
+  border-color: var(--accent);
+}
+
+.textarea-input {
+  font-family: var(--font-mono);
+  resize: vertical;
+}
+
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* リアルタイムシミュレーションボックス */
+.sim-box {
+  margin-top: 18px;
+  background: #0f1622;
+  border: 1px solid #233044;
+  border-radius: 4px;
+  padding: 14px 16px;
+}
+
+.sim-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 12.5px;
+  color: #38bdf8;
+  margin-bottom: 12px;
+}
+
+.sim-meta {
+  font-weight: 400;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+
+.sim-result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.sim-cell {
+  background: var(--canvas);
+  border: 1px solid var(--line-soft);
+  border-radius: 3px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sim-cell-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.sim-cell-val {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ok);
+}
+
+.sim-cell-val.is-cutoff {
+  color: var(--accent);
+}
+
+.sim-cell-sub {
+  font-size: 10.5px;
+  color: var(--faint);
+  line-height: 1.35;
+}
+
+/* アクションバー＆ボタン */
+.settings-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 6px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.btn--primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.btn--secondary {
+  background: var(--panel-raised);
+  color: var(--text-2);
+  border-color: var(--line);
+}
+
+.btn--secondary:hover:not(:disabled) {
+  background: var(--line);
+  color: var(--text);
+}
+
+.btn--lg {
+  padding: 10px 22px;
+  font-size: 13.5px;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

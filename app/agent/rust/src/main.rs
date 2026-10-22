@@ -109,17 +109,22 @@ async fn process_and_broadcast(
 }
 
 async fn run_agent_backend(
-    config: AppConfig,
+    config: Arc<RwLock<AppConfig>>,
     sharing_paused: Arc<AtomicBool>,
     local_telemetry_holder: Arc<RwLock<Option<LocalAgentTelemetryMessage>>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("[SpareLink] Initializing agent backend daemon...");
 
+    let initial_config = {
+        let lock = config.read().await;
+        lock.clone()
+    };
+
     // 1. Benchmark evaluation
-    let benchmark_score = if config.benchmark.manual_score > 0 {
-        println!("[SpareLink] Manual benchmark override: {} pt", config.benchmark.manual_score);
-        config.benchmark.manual_score
-    } else if config.benchmark.enabled {
+    let benchmark_score = if initial_config.benchmark.manual_score > 0 {
+        println!("[SpareLink] Manual benchmark override: {} pt", initial_config.benchmark.manual_score);
+        initial_config.benchmark.manual_score
+    } else if initial_config.benchmark.enabled {
         let detected_cores = std::thread::available_parallelism()
             .map(|n| n.get() as u32)
             .unwrap_or(4);
@@ -139,7 +144,7 @@ async fn run_agent_backend(
     println!("[SpareLink] Benchmark score: {} pt", benchmark_score);
 
     // 2. Transport & Peer Discovery Provider initialization
-    let transport_kind = match config.discovery.transport.to_lowercase().as_str() {
+    let transport_kind = match initial_config.discovery.transport.to_lowercase().as_str() {
         "wireguard" | "wg" => TransportKind::Wireguard,
         "static" => TransportKind::Static,
         "lan" => TransportKind::Lan,
@@ -148,9 +153,9 @@ async fn run_agent_backend(
 
     let discovery_config = DiscoveryConfig {
         transport: transport_kind,
-        default_p2p_port: config.agent.port,
-        wireguard_config_path: config.discovery.config_path.clone(),
-        static_peers: config.discovery.static_peers.clone(),
+        default_p2p_port: initial_config.agent.port,
+        wireguard_config_path: initial_config.discovery.config_path.clone(),
+        static_peers: initial_config.discovery.static_peers.clone(),
     };
 
     let discovery_provider = discovery::create_discovery_provider(&discovery_config);
@@ -160,8 +165,8 @@ async fn run_agent_backend(
         discovery_provider.transport_kind()
     );
 
-    let local_id = if !config.agent.node_name.is_empty() {
-        config.agent.node_name.clone()
+    let local_id = if !initial_config.agent.node_name.is_empty() {
+        initial_config.agent.node_name.clone()
     } else {
         std::env::var("COMPUTERNAME")
             .or_else(|_| std::env::var("HOSTNAME"))
@@ -201,8 +206,8 @@ async fn run_agent_backend(
     }
 
     peer_manager.start_background_tasks(
-        config.discovery.scan_interval_secs,
-        config.discovery.probe_interval_secs,
+        initial_config.discovery.scan_interval_secs,
+        initial_config.discovery.probe_interval_secs,
     );
 
     let latest_metrics = Arc::new(RwLock::new(None::<String>));
@@ -216,13 +221,11 @@ async fn run_agent_backend(
     let latest_metrics_probe = latest_metrics.clone();
     let peer_manager_probe = peer_manager.clone();
     let local_telemetry_probe = local_telemetry_holder.clone();
-    let evaluator_cfg = config.evaluator.clone();
-    let broadcast_interval_ms = config.agent.broadcast_interval_ms;
     let pause_probe = sharing_paused.clone();
 
     // 3. Metrics collection probe spawn
     if has_python_script {
-        let evaluator_cfg_py = evaluator_cfg.clone();
+        let config_py = config.clone();
         let pause_py = pause_probe.clone();
         match Command::new(&python_path)
             .arg(&script_path)
@@ -236,10 +239,14 @@ async fn run_agent_backend(
                         let mut reader = BufReader::new(stdout).lines();
                         while let Ok(Some(line)) = reader.next_line().await {
                             if let Ok(metrics) = serde_json::from_str::<ProbeMetrics>(&line) {
+                                let evaluator_cfg = {
+                                    let lock = config_py.read().await;
+                                    lock.evaluator.clone()
+                                };
                                 process_and_broadcast(
                                     metrics,
                                     benchmark_score,
-                                    &evaluator_cfg_py,
+                                    &evaluator_cfg,
                                     &peer_manager_probe,
                                     &local_telemetry_probe,
                                     &latest_metrics_probe,
@@ -256,8 +263,7 @@ async fn run_agent_backend(
                 eprintln!("[SpareLink] Python probe launch error ({}). Falling back to Windows native probe.", e);
                 spawn_native_probe_task(
                     benchmark_score,
-                    evaluator_cfg,
-                    broadcast_interval_ms,
+                    config.clone(),
                     peer_manager_probe,
                     local_telemetry_probe,
                     latest_metrics_probe,
@@ -269,8 +275,7 @@ async fn run_agent_backend(
     } else {
         spawn_native_probe_task(
             benchmark_score,
-            evaluator_cfg,
-            broadcast_interval_ms,
+            config.clone(),
             peer_manager_probe,
             local_telemetry_probe,
             latest_metrics_probe,
@@ -280,13 +285,14 @@ async fn run_agent_backend(
     }
 
     // 4. WebSocket & P2P server listener
-    let ws_addr = format!("{}:{}", config.agent.host, config.agent.port);
+    let ws_addr = format!("{}:{}", initial_config.agent.host, initial_config.agent.port);
     let listener = tokio::net::TcpListener::bind(&ws_addr).await?;
     println!("[SpareLink] WebSocket API & P2P listener active on ws://{}", ws_addr);
 
     // 5. Dedicated Web Dashboard HTTP Server (Port 5180)
+    let config_for_web = config.clone();
     tokio::spawn(async move {
-        web_server::run_dashboard_server(5180).await;
+        web_server::run_dashboard_server(5180, config_for_web).await;
     });
 
     while let Ok((stream, peer_addr)) = listener.accept().await {
@@ -349,18 +355,21 @@ async fn run_agent_backend(
 
 fn spawn_native_probe_task(
     benchmark_score: u32,
-    evaluator_cfg: EvaluatorSettings,
-    broadcast_interval_ms: u64,
+    config: Arc<RwLock<AppConfig>>,
     peer_manager: Arc<PeerManager>,
     local_telemetry_holder: Arc<RwLock<Option<LocalAgentTelemetryMessage>>>,
     latest_metrics: Arc<RwLock<Option<String>>>,
     tx: broadcast::Sender<String>,
     sharing_paused: Arc<AtomicBool>,
 ) {
-    let interval = Duration::from_millis(broadcast_interval_ms.max(500));
     tokio::spawn(async move {
         let mut probe = native_probe::NativeWindowsProbe::new();
         loop {
+            let (evaluator_cfg, broadcast_interval_ms) = {
+                let lock = config.read().await;
+                (lock.evaluator.clone(), lock.agent.broadcast_interval_ms)
+            };
+            let interval = Duration::from_millis(broadcast_interval_ms.max(500));
             tokio::time::sleep(interval).await;
             let metrics = probe.collect_metrics();
             process_and_broadcast(
@@ -379,7 +388,7 @@ fn spawn_native_probe_task(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = AppConfig::load();
+    let config = Arc::new(RwLock::new(AppConfig::load()));
     let args: Vec<String> = std::env::args().collect();
     let headless = args.iter().any(|a| a == "--headless" || a == "--no-gui");
 

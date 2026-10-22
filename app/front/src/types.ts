@@ -125,3 +125,38 @@ export interface TailscaleTelemetry {
   authUrl: string | null
   message: string
 }
+
+/** Agent 設定 (sparelink.toml と 1対1 対応) */
+export interface AgentSettings {
+  node_name: string
+  host: string
+  port: number
+  broadcast_interval_ms: number
+}
+
+export interface DiscoverySettings {
+  transport: string
+  config_path: string | null
+  scan_interval_secs: number
+  probe_interval_secs: number
+  static_peers: string[]
+}
+
+export interface EvaluatorSettings {
+  high_load_threshold: number
+  safety_headroom: number
+  min_memory_margin_gb: number
+}
+
+export interface BenchmarkSettings {
+  enabled: boolean
+  iterations_per_core: number
+  manual_score: number
+}
+
+export interface AppConfig {
+  agent: AgentSettings
+  discovery: DiscoverySettings
+  evaluator: EvaluatorSettings
+  benchmark: BenchmarkSettings
+}

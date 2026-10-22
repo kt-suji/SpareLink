@@ -138,6 +138,7 @@ pub fn show_resource_bar(
 }
 
 /// |||||||| 方式の単一リソースバーを描画 (点灯セグメント + 未点灯セグメント)
+#[allow(dead_code)]
 pub fn show_segmented_bar(
     ui: &mut egui::Ui,
     ratio: f32,
@@ -445,6 +446,12 @@ impl eframe::App for SpareLinkMonitorApp {
                                     ));
                                 }
 
+                                // 🌐 Webダッシュボード・設定を開くクイックボタン
+                                let web_title_btn = egui::Button::new(RichText::new("🌐").size(12.0).color(theme.text_main)).frame(false);
+                                if ui.add(web_title_btn).on_hover_text("ブラウザでWebダッシュボード・設定を開く (http://localhost:5180)").clicked() {
+                                    open_browser("http://localhost:5180");
+                                }
+
                                 // ☀ / 🌙 ダーク・ライトモード切替
                                 let mode_icon = if self.is_dark_mode { "☀" } else { "🌙" };
                                 let mode_btn = egui::Button::new(RichText::new(mode_icon).size(12.0).color(theme.text_main))
@@ -460,7 +467,7 @@ impl eframe::App for SpareLinkMonitorApp {
                 ui.separator();
 
                 // -------------------------------------------------------------
-                // 2. 自PC情報（コンパクトな |||||| 方式）
+                // 2. 自PC情報（コンパクトな |||||||| 方式・朱と緑で統一）
                 // -------------------------------------------------------------
                 if let Some(ref telem) = self.cached_telemetry {
                     egui::Frame::none()
@@ -469,11 +476,15 @@ impl eframe::App for SpareLinkMonitorApp {
                         .stroke(Stroke::new(1.0_f32, theme.card_border))
                         .inner_margin(8.0)
                         .show(ui, |ui| {
+                            let surplus_col = if is_paused { theme.unlit_bar } else { theme.ok };
+
                             // 行1: 自PC名 (最大10文字切り詰め) + 余剰スコア & |||||||| バー
                             ui.horizontal(|ui| {
                                 let dot_color = if is_paused { theme.warn } else { theme.ok };
                                 ui.label(RichText::new("●").size(9.0).color(dot_color));
+                                ui.add_space(4.0);
                                 ui.label(RichText::new(truncate_name(&telem.pc_name, 10)).strong().size(12.5).color(theme.text_main));
+                                ui.add_space(3.0);
                                 ui.label(RichText::new("(自PC)").size(11.0).color(theme.text_muted));
 
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -484,29 +495,31 @@ impl eframe::App for SpareLinkMonitorApp {
                                         let used_ratio = (telem.cpu_percent / 100.0).clamp(0.0, 1.0) as f32;
 
                                         ui.label(RichText::new(format!("{} pt", format_thousands(surplus_pt))).strong().size(12.0).color(theme.ok));
-                                        ui.add_space(4.0);
-                                        let surplus_col = if is_paused { theme.unlit_bar } else { theme.ok };
+                                        ui.add_space(6.0);
                                         show_resource_bar(ui, used_ratio, 8, theme.used_bar, surplus_col);
                                     }
                                 });
                             });
 
-                            ui.add_space(3.0);
+                            ui.add_space(4.0);
 
-                            // 行2: 実測CPUと実測MEM (超コンパクト |||||| 方式)
+                            // 行2: 実測CPUと実測MEM (グレー廃止・朱と緑の8セグメントバー + 数値間隔確保)
                             ui.horizontal(|ui| {
                                 ui.label(RichText::new("CPU:").size(11.0).color(theme.text_muted));
+                                ui.add_space(4.0);
                                 let cpu_ratio = (telem.cpu_percent / 100.0).clamp(0.0, 1.0) as f32;
-                                let cpu_bar_color = if telem.cpu_percent > 85.0 { theme.warn } else { theme.used_bar };
-                                show_segmented_bar(ui, cpu_ratio, 6, cpu_bar_color, theme.unlit_bar);
-                                ui.label(RichText::new(format!("{:>4.1}%", telem.cpu_percent)).monospace().size(11.0).color(theme.text_secondary));
+                                show_resource_bar(ui, cpu_ratio, 8, theme.used_bar, surplus_col);
+                                ui.add_space(6.0);
+                                ui.label(RichText::new(format!("{:.1}%", telem.cpu_percent)).monospace().size(11.0).color(theme.text_secondary));
 
-                                ui.add_space(8.0);
+                                ui.add_space(10.0);
 
                                 ui.label(RichText::new("MEM:").size(11.0).color(theme.text_muted));
+                                ui.add_space(4.0);
                                 let mem_ratio = (telem.memory_percent / 100.0).clamp(0.0, 1.0) as f32;
                                 let used_gb = (telem.memory_total_gb - telem.memory_available_gb).max(0.0);
-                                show_segmented_bar(ui, mem_ratio, 6, theme.used_bar, theme.unlit_bar);
+                                show_resource_bar(ui, mem_ratio, 8, theme.used_bar, surplus_col);
+                                ui.add_space(6.0);
                                 ui.label(RichText::new(format!("{:.0}% ({:.1}G)", telem.memory_percent, used_gb)).monospace().size(11.0).color(theme.text_secondary));
                             });
                         });
@@ -529,12 +542,16 @@ impl eframe::App for SpareLinkMonitorApp {
                                     match ts.state {
                                         TailscaleState::Running => {
                                             ui.label(RichText::new("●").color(theme.ok).size(9.0));
+                                            ui.add_space(4.0);
                                             ui.label(RichText::new("Tailscale:").size(11.0).color(theme.text_muted));
+                                            ui.add_space(4.0);
                                             ui.label(RichText::new(format!("接続中 ({})", ts.self_ip.as_deref().unwrap_or("100.x"))).size(11.5).strong().color(theme.text_main));
                                         }
                                         TailscaleState::NeedsLogin => {
                                             ui.label(RichText::new("▲").color(theme.warn).size(9.0));
+                                            ui.add_space(4.0);
                                             ui.label(RichText::new("Tailscale: ログイン必要").color(theme.warn).size(11.0));
+                                            ui.add_space(6.0);
                                             if let Some(ref url) = ts.auth_url {
                                                 if ui.small_button("認証を開く ↗").clicked() {
                                                     open_browser(url);
@@ -543,13 +560,16 @@ impl eframe::App for SpareLinkMonitorApp {
                                         }
                                         TailscaleState::NotInstalled => {
                                             ui.label(RichText::new("✕").color(theme.accent).size(9.0));
+                                            ui.add_space(4.0);
                                             ui.label(RichText::new("Tailscale: 未インストール").color(theme.accent).size(11.0));
+                                            ui.add_space(6.0);
                                             if ui.small_button("公式DL ↗").clicked() {
                                                 open_browser("https://tailscale.com/download");
                                             }
                                         }
                                         _ => {
                                             ui.label(RichText::new("○").color(theme.offline).size(9.0));
+                                            ui.add_space(4.0);
                                             ui.label(RichText::new("Tailscale: 停止中").size(11.0).color(theme.offline));
                                         }
                                     }
@@ -593,6 +613,7 @@ impl eframe::App for SpareLinkMonitorApp {
                                                 // 1. 状態ドット
                                                 let dot_color = if is_online { theme.ok } else { theme.offline };
                                                 ui.label(RichText::new("●").size(9.0).color(dot_color));
+                                                ui.add_space(4.0);
 
                                                 // 2. 切り詰めデバイス名 (最大10文字)
                                                 let name_color = if is_online { theme.text_main } else { theme.text_muted };
@@ -622,7 +643,7 @@ impl eframe::App for SpareLinkMonitorApp {
                                                         ui.label(RichText::new("--- pt").monospace().size(11.5).color(theme.offline));
                                                     }
 
-                                                    ui.add_space(4.0);
+                                                    ui.add_space(6.0);
 
                                                     // |||||||| バー: 左に使用分(赤)、右に余剰分(緑)
                                                     if is_online {
@@ -643,7 +664,7 @@ impl eframe::App for SpareLinkMonitorApp {
                 // -------------------------------------------------------------
                 // 5. アクションコントロールバー (下部)
                 // -------------------------------------------------------------
-                ui.add_space(1.0);
+                ui.add_space(2.0);
                 ui.horizontal(|ui| {
                     // 一時停止 / 再開ボタン
                     let pause_text = if is_paused { "▶ 共有を再開" } else { "⏸ 一時停止" };
@@ -657,8 +678,11 @@ impl eframe::App for SpareLinkMonitorApp {
                         self.sharing_paused.store(!is_paused, Ordering::SeqCst);
                     }
 
-                    // ブラウザ詳細画面を開くボタン
-                    if ui.button("🌐 Web詳細 ↗").clicked() {
+                    ui.add_space(6.0);
+
+                    // ブラウザ詳細画面・設定を開くボタン
+                    let web_btn = egui::Button::new(RichText::new("🌐 Web設定・詳細 ↗").color(theme.text_main).strong());
+                    if ui.add(web_btn).on_hover_text("ブラウザで詳細設定画面（http://localhost:5180）を開きます").clicked() {
                         open_browser("http://localhost:5180");
                     }
 
