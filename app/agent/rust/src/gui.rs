@@ -401,7 +401,7 @@ impl eframe::App for SpareLinkMonitorApp {
                             let left_resp = ui.horizontal(|ui| {
                                 ui.label(RichText::new("■").color(theme.accent).size(13.5));
                                 ui.label(RichText::new("SpareLink").strong().size(13.0).color(theme.text_main));
-                                ui.label(RichText::new("Core").monospace().size(10.5).color(theme.text_muted));
+                                ui.label(RichText::new(format!("v{}", env!("CARGO_PKG_VERSION"))).monospace().strong().size(10.5).color(theme.accent));
                             }).response;
 
                             if left_resp.dragged() {
@@ -579,7 +579,7 @@ impl eframe::App for SpareLinkMonitorApp {
                 }
 
                 // -------------------------------------------------------------
-                // 4. P2P ピア一覧 (デバイス名省略 + |||||||| 3層バー + pt + Ping)
+                // 4. P2P メッシュピア (常時一覧表示: デバイス名 + |||||||| バー + pt + Ping)
                 // -------------------------------------------------------------
                 let peers = self.cached_telemetry.as_ref().and_then(|t| t.peers.as_ref());
                 let online_count = peers.map(|p| p.iter().filter(|n| n.status == "online").count()).unwrap_or(0);
@@ -605,7 +605,7 @@ impl eframe::App for SpareLinkMonitorApp {
                             .show(ui, |ui| {
                                 if let Some(peer_list) = peers {
                                     if peer_list.is_empty() {
-                                        ui.label(RichText::new("探索中...").italics().size(11.5).color(theme.text_muted));
+                                        ui.label(RichText::new("SpareLink 稼働中の他PCはいません").italics().size(11.5).color(theme.text_muted));
                                     } else {
                                         for p in peer_list {
                                             let is_online = p.status == "online";
@@ -626,7 +626,7 @@ impl eframe::App for SpareLinkMonitorApp {
                                                         let ping_str = match p.latency_ms {
                                                             Some(0) => "<1 ms".to_string(),
                                                             Some(ms) => format!("{} ms", ms),
-                                                            None => "1 ms".to_string(),
+                                                            None => "-- ms".to_string(),
                                                         };
                                                         ui.label(RichText::new(ping_str).monospace().strong().size(11.5).color(theme.ping));
                                                     } else {

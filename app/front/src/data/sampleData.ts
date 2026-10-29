@@ -37,6 +37,11 @@ export const sampleSnapshot: NetworkSnapshot = {
       latencyMs: null,
       lastSeen: null,
       dataSource: 'sample',
+      peerLatencies: {
+        'workstation-02': 4,
+        'laptop-sato': 21,
+        'mini-pc-lab': 9,
+      },
     },
     {
       id: 'workstation-02',
@@ -61,6 +66,11 @@ export const sampleSnapshot: NetworkSnapshot = {
       latencyMs: 4,
       lastSeen: '1 秒前',
       dataSource: 'sample',
+      peerLatencies: {
+        'desktop-main': 4,
+        'laptop-sato': 18,
+        'mini-pc-lab': 12,
+      },
     },
     {
       id: 'laptop-sato',
@@ -85,6 +95,11 @@ export const sampleSnapshot: NetworkSnapshot = {
       latencyMs: 21,
       lastSeen: '2 秒前',
       dataSource: 'sample',
+      peerLatencies: {
+        'desktop-main': 21,
+        'workstation-02': 18,
+        'mini-pc-lab': 16,
+      },
     },
     {
       id: 'mini-pc-lab',
@@ -109,6 +124,11 @@ export const sampleSnapshot: NetworkSnapshot = {
       latencyMs: 9,
       lastSeen: '1 秒前',
       dataSource: 'sample',
+      peerLatencies: {
+        'desktop-main': 9,
+        'workstation-02': 12,
+        'laptop-sato': 16,
+      },
     },
     {
       id: 'old-tower',

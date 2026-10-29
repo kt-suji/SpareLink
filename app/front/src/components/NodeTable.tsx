@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { DataSource, PeerNode } from '../types'
 import { Meter } from './Meter'
 
@@ -49,69 +50,100 @@ function SurplusCell({ node }: { node: PeerNode }) {
 }
 
 export function NodeTable({ nodes, localNodeId, selectedId, source, onSelect }: NodeTableProps) {
+  const [onlineOnly, setOnlineOnly] = useState(false)
+
+  const filteredNodes = onlineOnly
+    ? nodes.filter((n) => n.status === 'online')
+    : nodes
+
+  const onlineCount = nodes.filter((n) => n.status === 'online').length
+
   return (
-    <div className="table-scroll">
-      <table className="node-table">
-        <thead>
-          <tr>
-            <th scope="col">PC名</th>
-            <th scope="col">状態</th>
-            <th scope="col">CPU使用率</th>
-            <th scope="col">メモリ使用率</th>
-            <th scope="col" className="col-surplus">
-              余剰計算資源 (割当可能CPU / メモリ)
-            </th>
-            <th scope="col" className="col-num">応答時間</th>
-            <th scope="col" className="col-optional">性能スコア</th>
-          </tr>
-        </thead>
-        <tbody>
-          {nodes.map((node) => {
-            const isLocal = node.id === localNodeId
-            const isSelected = node.id === selectedId
-            return (
-              <tr
-                key={node.id}
-                className={isSelected ? 'is-selected' : ''}
-                onClick={() => onSelect(node.id)}
-              >
-                <th scope="row">
-                  <button type="button" className="row-select" aria-pressed={isSelected}>
-                    {node.name}
-                  </button>
-                  {isLocal && <span className="local-tag">このPC</span>}
-                </th>
-                <td>
-                  <span className={`status status--${node.status}`}>
-                    {node.status === 'online' ? 'オンライン' : 'オフライン'}
-                  </span>
-                </td>
-                <td>
-                  <UsageCell value={node.cpuPercent} source={source} label={`${node.name} のCPU使用率`} />
-                </td>
-                <td>
-                  <UsageCell value={node.memoryPercent} source={source} label={`${node.name} のメモリ使用率`} />
-                </td>
-                <td className="col-surplus">
-                  <SurplusCell node={node} />
-                </td>
-                <td className="col-num num">
-                  {isLocal ? (
-                    <span className="value-muted">自身</span>
-                  ) : node.latencyMs === null ? (
-                    <span className="value-missing">—</span>
-                  ) : (
-                    `${node.latencyMs} ms`
-                  )}
-                </td>
-                <td className="col-optional num value-muted">
-                  {node.cpuBenchmarkScore !== null ? `${node.cpuBenchmarkScore.toLocaleString()} pt` : '未測定'}
+    <div className="node-table-container">
+      <div className="node-table-toolbar">
+        <span className="node-table-summary">
+          {onlineCount} 台オンライン / 全 {nodes.length} 台
+        </span>
+        <button
+          type="button"
+          className={`table-filter-btn ${onlineOnly ? 'is-active' : ''}`}
+          onClick={() => setOnlineOnly(!onlineOnly)}
+        >
+          {onlineOnly ? '✓ オンラインPCのみ表示中' : 'すべての登録PCを表示'}
+        </button>
+      </div>
+
+      <div className="table-scroll">
+        <table className="node-table">
+          <thead>
+            <tr>
+              <th scope="col">PC名</th>
+              <th scope="col">状態</th>
+              <th scope="col">CPU使用率</th>
+              <th scope="col">メモリ使用率</th>
+              <th scope="col" className="col-surplus">
+                余剰計算資源 (割当可能CPU / メモリ)
+              </th>
+              <th scope="col" className="col-num">応答時間</th>
+              <th scope="col" className="col-optional">性能スコア</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredNodes.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="table-empty-row">
+                  {onlineOnly ? 'オンラインのPCはありません' : '登録済みのPCはありません'}
                 </td>
               </tr>
-            )
-          })}
-        </tbody>
-      </table>
+            ) : (
+              filteredNodes.map((node) => {
+                const isLocal = node.id === localNodeId
+                const isSelected = node.id === selectedId
+                return (
+                  <tr
+                    key={node.id}
+                    className={isSelected ? 'is-selected' : ''}
+                    onClick={() => onSelect(node.id)}
+                  >
+                    <th scope="row">
+                      <button type="button" className="row-select" aria-pressed={isSelected}>
+                        {node.name}
+                      </button>
+                      {isLocal && <span className="local-tag">このPC</span>}
+                    </th>
+                    <td>
+                      <span className={`status status--${node.status}`}>
+                        {node.status === 'online' ? 'オンライン' : 'オフライン'}
+                      </span>
+                    </td>
+                    <td>
+                      <UsageCell value={node.cpuPercent} source={source} label={`${node.name} のCPU使用率`} />
+                    </td>
+                    <td>
+                      <UsageCell value={node.memoryPercent} source={source} label={`${node.name} のメモリ使用率`} />
+                    </td>
+                    <td className="col-surplus">
+                      <SurplusCell node={node} />
+                    </td>
+                    <td className="col-num num">
+                      {isLocal ? (
+                        <span className="value-muted">自身</span>
+                      ) : node.latencyMs === null ? (
+                        <span className="value-missing">—</span>
+                      ) : (
+                        `${node.latencyMs} ms`
+                      )}
+                    </td>
+                    <td className="col-optional num value-muted">
+                      {node.cpuBenchmarkScore !== null ? `${node.cpuBenchmarkScore.toLocaleString()} pt` : '未測定'}
+                    </td>
+                  </tr>
+                )
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

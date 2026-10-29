@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import './App.css'
+import { JobManagementPanel } from './components/JobManagementPanel'
 import { NodeDetail } from './components/NodeDetail'
+import { LatencyMatrix } from './components/LatencyMatrix'
 import { NodeTable } from './components/NodeTable'
 import { SettingsPanel } from './components/SettingsPanel'
 import { SourceTag } from './components/SourceTag'
@@ -13,16 +15,15 @@ const events = sampleEvents
 
 const NAV_ITEMS = [
   { id: 'overview', label: 'ネットワーク概要', implemented: true },
-  { id: 'nodes', label: 'PC一覧', implemented: false },
-  { id: 'jobs', label: '共通Job管理', implemented: false },
-  { id: 'logs', label: 'ログ', implemented: false },
+  { id: 'jobs', label: '共通Job管理', implemented: true },
   { id: 'settings', label: '設定', implemented: true },
 ]
 
 function App() {
   const { snapshot, agentConnected, tailscale } = useNetworkSnapshot()
   const [selectedId, setSelectedId] = useState(snapshot.localNodeId)
-  const [activeTab, setActiveTab] = useState<'overview' | 'settings'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'settings' | 'jobs'>('overview')
+  const [viewMode, setViewMode] = useState<'both' | 'topology' | 'table' | 'matrix'>('both')
 
   const { nodes, links, localNodeId, source } = snapshot
   const localNode = nodes.find((n) => n.id === localNodeId)
@@ -98,7 +99,7 @@ function App() {
                   disabled={!item.implemented}
                   onClick={() => {
                     if (item.implemented) {
-                      setActiveTab(item.id as 'overview' | 'settings')
+                      setActiveTab(item.id as 'overview' | 'settings' | 'jobs')
                     }
                   }}
                   aria-current={activeTab === item.id ? 'page' : undefined}
@@ -114,30 +115,68 @@ function App() {
         <main className="main">
           {activeTab === 'settings' ? (
             <SettingsPanel localNode={localNode} agentConnected={agentConnected} />
+          ) : activeTab === 'jobs' ? (
+            <JobManagementPanel
+              localNode={localNode}
+              nodes={nodes}
+              agentConnected={agentConnected}
+            />
           ) : (
             <>
               <div className="page-head">
-            <div>
-              <h1>ネットワーク全体の状況</h1>
-              <p className="page-desc">
-                各PCの負荷と基礎性能を評価し、実際に処理へ割り当て可能な「余剰計算資源」を算出・可視化します。
-              </p>
-            </div>
-            <ul className="data-legend" aria-label="表示値の凡例">
-              <li>
-                <span className="legend-swatch legend-swatch--live" aria-hidden="true" />
-                実測値
-              </li>
-              <li>
-                <span className="legend-swatch legend-swatch--sample" aria-hidden="true" />
-                サンプル値
-              </li>
-              <li>
-                <span className="legend-swatch legend-swatch--none" aria-hidden="true" />
-                未取得・未評価
-              </li>
-            </ul>
-          </div>
+                <div>
+                  <h1>ネットワーク全体の状況</h1>
+                  <p className="page-desc">
+                    各PCの負荷と基礎性能を評価し、実際に処理へ割り当て可能な「余剰計算資源」を算出・可視化します。
+                  </p>
+                </div>
+                <div className="page-head-controls">
+                  <div className="view-mode-selector" role="group" aria-label="表示モード切替">
+                    <button
+                      type="button"
+                      className={`view-btn ${viewMode === 'both' ? 'is-active' : ''}`}
+                      onClick={() => setViewMode('both')}
+                    >
+                      両方表示
+                    </button>
+                    <button
+                      type="button"
+                      className={`view-btn ${viewMode === 'topology' ? 'is-active' : ''}`}
+                      onClick={() => setViewMode('topology')}
+                    >
+                      トポロジー図
+                    </button>
+                    <button
+                      type="button"
+                      className={`view-btn ${viewMode === 'table' ? 'is-active' : ''}`}
+                      onClick={() => setViewMode('table')}
+                    >
+                      PC一覧テーブル
+                    </button>
+                    <button
+                      type="button"
+                      className={`view-btn ${viewMode === 'matrix' ? 'is-active' : ''}`}
+                      onClick={() => setViewMode('matrix')}
+                    >
+                      Ping遅延マトリクス
+                    </button>
+                  </div>
+                  <ul className="data-legend" aria-label="表示値の凡例">
+                    <li>
+                      <span className="legend-swatch legend-swatch--live" aria-hidden="true" />
+                      実測値
+                    </li>
+                    <li>
+                      <span className="legend-swatch legend-swatch--sample" aria-hidden="true" />
+                      サンプル値
+                    </li>
+                    <li>
+                      <span className="legend-swatch legend-swatch--none" aria-hidden="true" />
+                      未取得・未評価
+                    </li>
+                  </ul>
+                </div>
+              </div>
 
           {agentConnected ? (
             <p className="notice notice--live" role="note">
@@ -300,53 +339,73 @@ function App() {
 
           <div className="workspace">
             <div className="col-main">
-              <section className="panel panel--topology" aria-labelledby="topology-heading">
-                <header className="panel-head">
-                  <h2 id="topology-heading">接続トポロジー & 資源マップ</h2>
-                  <SourceTag source={source} />
-                  <ul className="link-legend" aria-label="接続線の凡例">
-                    <li>
-                      <span className="link-swatch link-swatch--local" aria-hidden="true" />
-                      自PC接続
-                    </li>
-                    <li>
-                      <span className="link-swatch link-swatch--peer" aria-hidden="true" />
-                      ピア間接続
-                    </li>
-                    <li>
-                      <span className="link-swatch link-swatch--down" aria-hidden="true" />
-                      切断
-                    </li>
-                  </ul>
-                </header>
-                <div className="topology-canvas">
-                  <Topology
+              {(viewMode === 'both' || viewMode === 'topology') && (
+                <section className="panel panel--topology" aria-labelledby="topology-heading">
+                  <header className="panel-head">
+                    <h2 id="topology-heading">接続トポロジー & 資源マップ</h2>
+                    <SourceTag source={source} />
+                    <ul className="link-legend" aria-label="接続線の凡例">
+                      <li>
+                        <span className="link-swatch link-swatch--local" aria-hidden="true" />
+                        自PC接続
+                      </li>
+                      <li>
+                        <span className="link-swatch link-swatch--peer" aria-hidden="true" />
+                        ピア間接続
+                      </li>
+                      <li>
+                        <span className="link-swatch link-swatch--down" aria-hidden="true" />
+                        切断
+                      </li>
+                    </ul>
+                  </header>
+                  <div className="topology-canvas">
+                    <Topology
+                      nodes={nodes}
+                      links={links}
+                      localNodeId={localNodeId}
+                      selectedId={selectedNode.id}
+                      onSelect={setSelectedId}
+                    />
+                  </div>
+                  <p className="panel-foot">
+                    PCを選択すると右側に余剰評価の詳細を表示します。線上の数値はリアルタイム実測Ping応答時間です（自PC通信およびピアPC同士のPingを反映）。
+                  </p>
+                </section>
+              )}
+
+              {(viewMode === 'both' || viewMode === 'table') && (
+                <section className="panel panel--nodes" aria-labelledby="nodes-heading">
+                  <header className="panel-head">
+                    <h2 id="nodes-heading">PC一覧・負荷と余剰計算資源</h2>
+                    <span className="panel-count num">{nodes.length} 台</span>
+                    <SourceTag source={source} />
+                  </header>
+                  <NodeTable
                     nodes={nodes}
-                    links={links}
+                    localNodeId={localNodeId}
+                    selectedId={selectedNode.id}
+                    source={source}
+                    onSelect={setSelectedId}
+                  />
+                </section>
+              )}
+
+              {(viewMode === 'both' || viewMode === 'matrix') && (
+                <section className="panel panel--matrix" aria-labelledby="matrix-heading">
+                  <header className="panel-head">
+                    <h2 id="matrix-heading">全PC 相互Ping遅延マトリクス</h2>
+                    <span className="panel-count num">{nodes.length} 台メッシュ</span>
+                    <SourceTag source={source} />
+                  </header>
+                  <LatencyMatrix
+                    nodes={nodes}
                     localNodeId={localNodeId}
                     selectedId={selectedNode.id}
                     onSelect={setSelectedId}
                   />
-                </div>
-                <p className="panel-foot">
-                  PCを選択すると右側に余剰評価の詳細を表示します。線上の数値はこのPCから見た応答時間です。
-                </p>
-              </section>
-
-              <section className="panel panel--nodes" aria-labelledby="nodes-heading">
-                <header className="panel-head">
-                  <h2 id="nodes-heading">PC一覧・負荷と余剰計算資源</h2>
-                  <span className="panel-count num">{nodes.length} 台</span>
-                  <SourceTag source={source} />
-                </header>
-                <NodeTable
-                  nodes={nodes}
-                  localNodeId={localNodeId}
-                  selectedId={selectedNode.id}
-                  source={source}
-                  onSelect={setSelectedId}
-                />
-              </section>
+                </section>
+              )}
             </div>
 
             <div className="col-side">
@@ -355,6 +414,8 @@ function App() {
                   node={selectedNode}
                   isLocal={selectedNode.id === localNodeId}
                   source={selectedNode.dataSource}
+                  allNodes={nodes}
+                  localNodeId={localNodeId}
                 />
               </aside>
 
@@ -386,7 +447,9 @@ function App() {
         </span>
         <span className="sb-item">Local Agent: {agentConnected ? '接続済み' : '未接続'}</span>
         <span className="sb-item">Tailscale P2P同期: 準備中</span>
-        <span className="sb-item">共通Job API: 未実装</span>
+        <span className="sb-item">
+          共通Job API: <strong>{agentConnected ? '稼働中 (P2P分散オフロード)' : '未接続'}</strong>
+        </span>
       </footer>
     </div>
   )

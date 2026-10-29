@@ -64,6 +64,7 @@ export interface PeerNodeState {
   cpuBenchmarkScore: number | null
   surplus: SurplusCapacity
   transport: string
+  peerLatencies?: Record<string, number>
 }
 
 /** SpareLink Agent が配置された1台のPC */
@@ -92,6 +93,7 @@ export interface PeerNode {
   latencyMs: number | null
   lastSeen: string | null
   dataSource: DataSource
+  peerLatencies?: Record<string, number>
 }
 
 export interface NetworkSnapshot {
@@ -160,3 +162,27 @@ export interface AppConfig {
   evaluator: EvaluatorSettings
   benchmark: BenchmarkSettings
 }
+
+/** 分散ジョブの実行ステータス */
+export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+/** 分散計算ジョブ */
+export interface ComputeJob {
+  id: string
+  name: string
+  command: string
+  job_type: 'python' | 'command'
+  target_node_id: string
+  assigned_node_id?: string | null
+  assigned_node_name?: string | null
+  requester_node_id?: string
+  requester_node_name?: string
+  status: JobStatus
+  submitted_at: string
+  started_at?: string | null
+  completed_at?: string | null
+  exit_code?: number | null
+  stdout: string
+  stderr: string
+}
+

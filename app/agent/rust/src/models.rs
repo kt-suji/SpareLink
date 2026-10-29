@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /** Python監視プローブから標準出力経由で受け取る実測システム情報 */
@@ -53,6 +54,8 @@ pub struct PeerNodeState {
     pub cpu_benchmark_score: Option<u32>,
     pub surplus: SurplusCapacity,
     pub transport: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peer_latencies: Option<HashMap<String, u64>>,
 }
 
 /** Tailscale の稼働ステータス */
@@ -93,4 +96,53 @@ pub struct LocalAgentTelemetryMessage {
     pub peers: Option<Vec<PeerNodeState>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tailscale: Option<TailscaleTelemetry>,
+}
+
+/** 分散タスクの実行ステータス */
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JobStatus {
+    Pending,
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+/** 分散計算ジョブモデル */
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComputeJob {
+    pub id: String,
+    pub name: String,
+    pub command: String,
+    #[serde(alias = "jobType")]
+    pub job_type: String, // "command" | "python"
+    #[serde(alias = "targetNodeId")]
+    pub target_node_id: String, // "auto" または特定のノードID
+    #[serde(default, alias = "assignedNodeId")]
+    pub assigned_node_id: Option<String>,
+    #[serde(default, alias = "assignedNodeName")]
+    pub assigned_node_name: Option<String>,
+    #[serde(default, alias = "requesterNodeId")]
+    pub requester_node_id: String,
+    #[serde(default, alias = "requesterNodeName")]
+    pub requester_node_name: String,
+    #[serde(default = "default_pending_status")]
+    pub status: JobStatus,
+    #[serde(default, alias = "submittedAt")]
+    pub submitted_at: String,
+    #[serde(default, alias = "startedAt")]
+    pub started_at: Option<String>,
+    #[serde(default, alias = "completedAt")]
+    pub completed_at: Option<String>,
+    #[serde(default, alias = "exitCode")]
+    pub exit_code: Option<i32>,
+    #[serde(default)]
+    pub stdout: String,
+    #[serde(default)]
+    pub stderr: String,
+}
+
+fn default_pending_status() -> JobStatus {
+    JobStatus::Pending
 }

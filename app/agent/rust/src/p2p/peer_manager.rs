@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -9,10 +10,17 @@ use tokio_tungstenite::client_async;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::discovery::{DiscoveredPeer, PeerDiscoveryProvider};
-use crate::models::{
-    LocalAgentTelemetryMessage, SurplusCapacity, SurplusEvaluationStatus, TailscaleTelemetry,
-};
+use crate::models::{LocalAgentTelemetryMessage, TailscaleTelemetry};
 use super::protocol::{P2PMessage, PeerNodeState};
+
+fn get_known_nodes_path() -> PathBuf {
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(parent) = exe_path.parent() {
+            return parent.join("sparelink_known_nodes.json");
+        }
+    }
+    PathBuf::from("sparelink_known_nodes.json")
+}
 
 /// 受信したPingの送信元情報と既存ピアリストを照合し、同一ノードのキーを特定する
 fn find_matching_peer_key(
@@ -64,15 +72,44 @@ pub struct PeerManager {
 }
 
 impl PeerManager {
+    /// 過去に一度でもSpareLinkで疎通したことのある既知ノードを永続化ファイルから読み込む
+    fn load_known_peers() -> HashMap<String, PeerNodeState> {
+        let path = get_known_nodes_path();
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if let Ok(list) = serde_json::from_str::<Vec<PeerNodeState>>(&content) {
+                let mut map = HashMap::new();
+                for mut p in list {
+                    p.status = "offline".to_string();
+                    p.latency_ms = None;
+                    p.last_seen_secs_ago = Some(999);
+                    map.insert(p.id.clone(), p);
+                }
+                println!("[SpareLink P2P] Loaded {} previously verified SpareLink node(s) from {}", map.len(), path.display());
+                return map;
+            }
+        }
+        HashMap::new()
+    }
+
+    /// SpareLinkで疎通が確認されたノード一覧をファイルに永続化保存する
+    fn save_known_peers_unlocked(peers: &HashMap<String, PeerNodeState>) {
+        let path = get_known_nodes_path();
+        let list: Vec<PeerNodeState> = peers.values().cloned().collect();
+        if let Ok(json) = serde_json::to_string_pretty(&list) {
+            let _ = std::fs::write(&path, json);
+        }
+    }
+
     pub fn new(
         local_id: String,
         discovery: Box<dyn PeerDiscoveryProvider>,
         local_telemetry: Arc<RwLock<Option<LocalAgentTelemetryMessage>>>,
     ) -> Self {
+        let initial_peers = Self::load_known_peers();
         Self {
             local_id,
             discovery: Arc::from(discovery),
-            peers: Arc::new(RwLock::new(HashMap::new())),
+            peers: Arc::new(RwLock::new(initial_peers)),
             discovered_endpoints: Arc::new(RwLock::new(Vec::new())),
             local_telemetry,
         }
@@ -87,6 +124,44 @@ impl PeerManager {
     /// Tailscaleの稼働ステータスを取得する
     pub async fn get_tailscale_status(&self) -> Option<TailscaleTelemetry> {
         self.discovery.get_tailscale_status().await
+    }
+
+    /// 特定のピアに対して任意のP2PメッセージをWebSocket経由で送信する
+    pub async fn send_p2p_message_to_peer(
+        &self,
+        peer_id: &str,
+        msg: P2PMessage,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let endpoints = self.discovered_endpoints.read().await;
+        let endpoint = endpoints.iter().find(|e| {
+            e.id == peer_id || e.id.strip_prefix("tailscale:").unwrap_or(&e.id).eq_ignore_ascii_case(peer_id)
+        });
+
+        let ws_url = if let Some(e) = endpoint {
+            e.ws_url()
+        } else {
+            let p_lock = self.peers.read().await;
+            if let Some(p) = p_lock.get(peer_id) {
+                if p.address.contains(':') {
+                    format!("ws://{}", p.address)
+                } else {
+                    format!("ws://{}:3001", p.address)
+                }
+            } else {
+                return Err(format!("ピア '{}' の接続先アドレスが見つかりません", peer_id).into());
+            }
+        };
+
+        let sock_addr = ws_url.trim_start_matches("ws://");
+        let tcp_stream = tokio::net::TcpStream::connect(sock_addr).await?;
+        let _ = tcp_stream.set_nodelay(true);
+        let (mut ws_stream, _) = client_async(&ws_url, tcp_stream).await?;
+
+        let json = serde_json::to_string(&msg)?;
+        ws_stream.send(Message::Text(json.into())).await?;
+        let _ = ws_stream.close(None).await;
+
+        Ok(())
     }
 
     /// 外部（着信WebSocket）からPingを受信した際、ピア状態を更新してPongメッセージを生成する
@@ -123,6 +198,7 @@ impl PeerManager {
                 cpu_benchmark_score: telemetry.cpu_benchmark_score,
                 surplus: telemetry.surplus.clone(),
                 transport: self.discovery.transport_kind().to_string(),
+                peer_latencies: None,
             });
 
             entry.status = "online".to_string();
@@ -135,9 +211,25 @@ impl PeerManager {
             entry.memory_percent = Some(telemetry.memory_percent);
             entry.memory_available_gb = Some(telemetry.memory_available_gb);
             entry.surplus = telemetry.surplus.clone();
-            if entry.latency_ms.is_none() {
-                entry.latency_ms = Some(1);
+
+            if let Some(ref peer_list) = telemetry.peers {
+                let mut lat_map = HashMap::new();
+                for p in peer_list {
+                    if let Some(lat) = p.latency_ms {
+                        lat_map.insert(p.id.clone(), lat);
+                        lat_map.insert(p.name.to_lowercase(), lat);
+                        if let Some(pos) = p.id.find(':') {
+                            lat_map.insert(p.id[pos + 1..].to_string(), lat);
+                        }
+                    }
+                }
+                if !lat_map.is_empty() {
+                    entry.peer_latencies = Some(lat_map);
+                }
             }
+            // 受信Pingだけでは往復遅延を測れないため、latency_ms は捏造せず probe_peer の実測値のみを使う
+
+            Self::save_known_peers_unlocked(&lock);
         }
 
         // 自身の最新テレメトリを載せてPongを返信
@@ -172,34 +264,6 @@ impl PeerManager {
                     Ok(peers) => {
                         let mut end_lock = manager_discovery.discovered_endpoints.write().await;
                         *end_lock = peers.clone();
-
-                        let mut peer_lock = manager_discovery.peers.write().await;
-                        for p in peers {
-                            peer_lock.entry(p.id.clone()).or_insert_with(|| PeerNodeState {
-                                id: p.id.clone(),
-                                name: p.name.clone(),
-                                address: p.ip.clone(),
-                                os: p.os.clone(),
-                                status: "offline".to_string(),
-                                latency_ms: None,
-                                last_seen_secs_ago: None,
-                                cpu_cores: None,
-                                cpu_percent: None,
-                                memory_percent: None,
-                                memory_total_gb: None,
-                                memory_available_gb: None,
-                                cpu_benchmark_score: None,
-                                surplus: SurplusCapacity {
-                                    status: SurplusEvaluationStatus::InsufficientData,
-                                    confidence: None,
-                                    allocatable_cpu_score: None,
-                                    allocatable_memory_gb: None,
-                                    algorithm_version: None,
-                                    status_note: "Peer agent awaiting connection".to_string(),
-                                },
-                                transport: p.transport.to_string(),
-                            });
-                        }
                     }
                     Err(e) => {
                         eprintln!("[SpareLink P2P] Discovery scan error: {}", e);
@@ -272,37 +336,38 @@ impl PeerManager {
 
         // 1.5秒タイムアウトで接続およびPing/Pong計測
         let probe_result = tokio::time::timeout(Duration::from_millis(1500), async {
-            // 1. 純粋なTCPハンドシェイク遅延 (SYN -> SYN-ACKのネットワーク往復RTT)
-            let tcp_start = Instant::now();
             let tcp_stream = tokio::net::TcpStream::connect(&sock_addr).await?;
-            let tcp_rtt_ms = tcp_start.elapsed().as_millis() as u64;
-
-            // 2. Nagleアルゴリズム無効化 (WindowsのDelayed ACK 40ms待機を回避)
             let _ = tcp_stream.set_nodelay(true);
 
-            // 3. WebSocketプロトコルアップグレード
+            // WebSocketプロトコルアップグレード
             let (mut ws_stream, _) = client_async(&ws_url, tcp_stream).await?;
 
-            // 4. Ping送信からPong受信までの往復RTT計測
+            // Ping送信からPong受信までの真のP2Pネットワーク往復RTT計測
             let ping_json = serde_json::to_string(&ping_msg)?;
             let ping_start = Instant::now();
             ws_stream.send(Message::Text(ping_json.into())).await?;
 
+            let mut fallback_telem: Option<LocalAgentTelemetryMessage> = None;
+
             while let Some(Ok(Message::Text(reply))) = ws_stream.next().await {
                 if let Ok(msg) = serde_json::from_str::<P2PMessage>(&reply) {
                     if let P2PMessage::Pong { telemetry, .. } = msg {
-                        let app_rtt_ms = ping_start.elapsed().as_millis() as u64;
-                        let latency = app_rtt_ms.min(tcp_rtt_ms);
-                        return Ok::<(LocalAgentTelemetryMessage, u64), Box<dyn std::error::Error + Send + Sync>>((telemetry, latency));
+                        let latency_ms = ping_start.elapsed().as_millis() as u64;
+                        return Ok::<(LocalAgentTelemetryMessage, Option<u64>), Box<dyn std::error::Error + Send + Sync>>((telemetry, Some(latency_ms)));
                     }
                 } else if let Ok(telem) = serde_json::from_str::<LocalAgentTelemetryMessage>(&reply) {
-                    let app_rtt_ms = ping_start.elapsed().as_millis() as u64;
-                    let latency = app_rtt_ms.min(tcp_rtt_ms);
-                    return Ok::<(LocalAgentTelemetryMessage, u64), Box<dyn std::error::Error + Send + Sync>>((telem, latency));
+                    // 接続確立時に相手サーバーから自発的に送信される初期グリーティングメッセージ
+                    // （Pingに対するPong応答ではないため、RTT計測完了とはみなさずPongを待ち続ける）
+                    fallback_telem = Some(telem);
                 }
             }
 
-            Err::<(LocalAgentTelemetryMessage, u64), Box<dyn std::error::Error + Send + Sync>>("応答を受信できませんでした".into())
+            // 万一Pongを受信する前に接続が切断された場合でも、初期テレメトリを受信できていれば活用（遅延は未計測）
+            if let Some(telem) = fallback_telem {
+                return Ok::<(LocalAgentTelemetryMessage, Option<u64>), Box<dyn std::error::Error + Send + Sync>>((telem, None));
+            }
+
+            Err::<(LocalAgentTelemetryMessage, Option<u64>), Box<dyn std::error::Error + Send + Sync>>("応答を受信できませんでした".into())
         })
         .await;
 
@@ -310,29 +375,66 @@ impl PeerManager {
         let target_key = find_matching_peer_key(&lock, &peer.id, &peer.name)
             .unwrap_or_else(|| peer.id.clone());
 
-        if let Some(entry) = lock.get_mut(&target_key) {
-            match probe_result {
-                Ok(Ok((telemetry, latency_ms))) => {
-                    // P2P疎通成功！ 相手の最新実測値と実測Ping遅延(ms)を反映
-                    entry.status = "online".to_string();
-                    entry.latency_ms = Some(latency_ms);
-                    entry.last_seen_secs_ago = Some(0);
-                    entry.cpu_cores = Some(telemetry.cpu_cores);
-                    entry.cpu_percent = Some(telemetry.cpu_percent);
-                    entry.memory_percent = Some(telemetry.memory_percent);
-                    entry.memory_total_gb = Some(telemetry.memory_total_gb);
-                    entry.memory_available_gb = Some(telemetry.memory_available_gb);
-                    entry.cpu_benchmark_score = telemetry.cpu_benchmark_score;
-                    entry.surplus = telemetry.surplus;
+        match probe_result {
+            Ok(Ok((telemetry, latency_opt))) => {
+                // P2P疎通成功！ 相手の最新実測値と実測Ping遅延(ms)を反映（未登録なら新規追加）
+                let entry = lock.entry(target_key.clone()).or_insert_with(|| PeerNodeState {
+                    id: target_key.clone(),
+                    name: peer.name.clone(),
+                    address: peer.ip.clone(),
+                    os: peer.os.clone(),
+                    status: "online".to_string(),
+                    latency_ms: None,
+                    last_seen_secs_ago: Some(0),
+                    cpu_cores: Some(telemetry.cpu_cores),
+                    cpu_percent: Some(telemetry.cpu_percent),
+                    memory_percent: Some(telemetry.memory_percent),
+                    memory_total_gb: Some(telemetry.memory_total_gb),
+                    memory_available_gb: Some(telemetry.memory_available_gb),
+                    cpu_benchmark_score: telemetry.cpu_benchmark_score,
+                    surplus: telemetry.surplus.clone(),
+                    transport: peer.transport.to_string(),
+                    peer_latencies: None,
+                });
+
+                entry.status = "online".to_string();
+                if let Some(lat) = latency_opt {
+                    entry.latency_ms = Some(lat);
                 }
-                _ => {
-                    // 相手先PCへの外向きProbeが失敗した場合でも、直近でPingを受信している場合はオンラインを維持
-                    let is_recently_seen = entry.last_seen_secs_ago.map(|s| s < 15).unwrap_or(false);
-                    if is_recently_seen {
-                        if entry.latency_ms.is_none() {
-                            entry.latency_ms = Some(0);
+                entry.last_seen_secs_ago = Some(0);
+                entry.cpu_cores = Some(telemetry.cpu_cores);
+                entry.cpu_percent = Some(telemetry.cpu_percent);
+                entry.memory_percent = Some(telemetry.memory_percent);
+                entry.memory_total_gb = Some(telemetry.memory_total_gb);
+                entry.memory_available_gb = Some(telemetry.memory_available_gb);
+                entry.cpu_benchmark_score = telemetry.cpu_benchmark_score;
+                entry.surplus = telemetry.surplus;
+
+                if let Some(ref peer_list) = telemetry.peers {
+                    let mut lat_map = HashMap::new();
+                    for p in peer_list {
+                        if let Some(lat) = p.latency_ms {
+                            lat_map.insert(p.id.clone(), lat);
+                            lat_map.insert(p.name.to_lowercase(), lat);
+                            if let Some(pos) = p.id.find(':') {
+                                lat_map.insert(p.id[pos + 1..].to_string(), lat);
+                            }
                         }
-                    } else {
+                    }
+                    if !lat_map.is_empty() {
+                        entry.peer_latencies = Some(lat_map);
+                    }
+                }
+
+                // 過去に一度でも疎通したPCとしてファイル保存
+                Self::save_known_peers_unlocked(&lock);
+            }
+            _ => {
+                // 相手先PCへの外向きProbeが失敗した場合:
+                // 既にSpareLinkで疎通したことがある登録済みPCの場合のみ、状態をオフラインに更新
+                if let Some(entry) = lock.get_mut(&target_key) {
+                    let is_recently_seen = entry.last_seen_secs_ago.map(|s| s < 15).unwrap_or(false);
+                    if !is_recently_seen {
                         entry.status = "offline".to_string();
                         entry.latency_ms = None;
                     }

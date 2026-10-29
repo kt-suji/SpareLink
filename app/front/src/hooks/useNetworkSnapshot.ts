@@ -43,6 +43,18 @@ export function useNetworkSnapshot() {
     }
 
     setSnapshot((prev) => {
+      // 0. 自PCから見た各ピアへのPingマップ
+      const localPeerLatencies: Record<string, number> = {}
+      if (metrics.peers) {
+        for (const p of metrics.peers) {
+          if (p.latencyMs != null) {
+            localPeerLatencies[p.id] = p.latencyMs
+            localPeerLatencies[p.name.toLowerCase()] = p.latencyMs
+            if (p.address) localPeerLatencies[p.address] = p.latencyMs
+          }
+        }
+      }
+
       // 1. 自PC（Local Node）の実測反映
       const localNode: PeerNode = {
         id: prev.localNodeId,
@@ -70,6 +82,7 @@ export function useNetworkSnapshot() {
         latencyMs: 0,
         lastSeen: 'リアルタイム',
         dataSource: 'live',
+        peerLatencies: localPeerLatencies,
       }
 
       // 2. ピア一覧の反映 (Tailscale / WireGuard 等で検出されたピア)
@@ -93,19 +106,51 @@ export function useNetworkSnapshot() {
           latencyMs: p.latencyMs ?? null,
           lastSeen: p.lastSeenSecsAgo != null ? `${p.lastSeenSecsAgo}秒前` : (p.status === 'online' ? 'リアルタイム' : '未疎通'),
           dataSource: 'live' as const,
+          peerLatencies: p.peerLatencies,
         }))
 
-        // 自PCと各ピア間のリンクを動的に生成
-        links = peerNodes.map((p) => ({
+        // 自PCと各ピア間のリンク
+        const localLinks: NetworkLink[] = peerNodes.map((p) => ({
           sourceId: prev.localNodeId,
           targetId: p.id,
           latencyMs: p.latencyMs ?? null,
           status: p.status === 'online' ? ('active' as const) : ('disconnected' as const),
         }))
+
+        // ピアPC同士のリンク（全メッシュ）
+        const peerToPeerLinks: NetworkLink[] = []
+        for (let i = 0; i < peerNodes.length; i++) {
+          for (let j = i + 1; j < peerNodes.length; j++) {
+            const p1 = peerNodes[i]
+            const p2 = peerNodes[j]
+
+            const lat1 =
+              p1.peerLatencies?.[p2.id] ??
+              p1.peerLatencies?.[p2.name.toLowerCase()] ??
+              (p2.address ? p1.peerLatencies?.[p2.address] : undefined)
+
+            const lat2 =
+              p2.peerLatencies?.[p1.id] ??
+              p2.peerLatencies?.[p1.name.toLowerCase()] ??
+              (p1.address ? p2.peerLatencies?.[p1.address] : undefined)
+
+            const latencyMs = lat1 ?? lat2 ?? null
+            const isOnline = p1.status === 'online' && p2.status === 'online'
+
+            peerToPeerLinks.push({
+              sourceId: p1.id,
+              targetId: p2.id,
+              latencyMs,
+              status: isOnline ? 'active' : 'disconnected',
+            })
+          }
+        }
+
+        links = [...localLinks, ...peerToPeerLinks]
       } else {
-        // ピアが未検出の場合は初期サンプル構成のノード（自PC以外）を維持
-        peerNodes = prev.nodes.filter((node) => node.id !== prev.localNodeId)
-        links = prev.links
+        // Agent連携中だがピアが未検出・未登録の場合は空（ダミーのサンプルPCは混ぜない）
+        peerNodes = []
+        links = []
       }
 
       return {
@@ -113,7 +158,7 @@ export function useNetworkSnapshot() {
         source: 'live',
         capturedAt: new Date().toLocaleTimeString('ja-JP'),
         nodes: [localNode, ...peerNodes],
-        links: links.length > 0 ? links : prev.links,
+        links,
       }
     })
   }, [])

@@ -256,6 +256,96 @@ body {
   font-size: 12.5px;
 }
 
+.page-head-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.view-mode-selector {
+  display: inline-flex;
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  padding: 3px;
+  gap: 3px;
+}
+
+.view-btn {
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: inherit;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.view-btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.view-btn.is-active {
+  background: var(--surface, #1e2530);
+  color: var(--text);
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.node-table-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.node-table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.15);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.node-table-summary {
+  color: var(--muted);
+}
+
+.table-filter-btn {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-2);
+  font-size: 11.5px;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.table-filter-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.table-filter-btn.is-active {
+  background: rgba(240, 100, 79, 0.15);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.table-empty-row {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--muted);
+  font-style: italic;
+}
+
 /* 実測値 / サンプル値 / 未取得 の凡例 */
 .data-legend {
   display: flex;
@@ -598,12 +688,38 @@ body {
 .topo-latency rect {
   fill: var(--canvas);
   stroke: #3a4250;
+  transition: stroke 0.15s ease, fill 0.15s ease;
 }
 
 .topo-latency text {
   fill: var(--text-2);
   font-family: var(--font-mono);
   font-size: 11px;
+}
+
+.topo-latency.is-peer rect {
+  fill: #13171e;
+  stroke: #2e3644;
+}
+
+.topo-latency.is-peer text {
+  fill: #8b97a8;
+  font-size: 10px;
+}
+
+.topo-latency.is-selected rect {
+  fill: #221a1f;
+  stroke: var(--accent);
+}
+
+.topo-latency.is-selected text {
+  fill: #ffffff;
+  font-weight: 600;
+}
+
+.topo-latency.is-down rect {
+  fill: #14171d;
+  stroke: #2a313d;
 }
 
 .topo-latency.is-down text {
@@ -1763,4 +1879,843 @@ body {
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ------------------------------------------------------------------
+ * 共通Job管理 (P2Pタスク分散・実行エンジン) スタイル
+ * ------------------------------------------------------------------ */
+.job-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.job-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.auto-refresh-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.auto-refresh-toggle input {
+  cursor: pointer;
+}
+
+/* 統計グリッド */
+.job-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.job-stat-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+  overflow: hidden;
+}
+
+.job-stat-card--highlight {
+  border-color: #2b5585;
+  background: linear-gradient(135deg, rgba(20, 32, 50, 0.95), rgba(15, 22, 35, 0.95));
+  box-shadow: 0 0 16px rgba(45, 120, 220, 0.12);
+}
+
+.job-stat-card .stat-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.job-stat-card .stat-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.1;
+}
+
+.stat-value--running {
+  color: #38bdf8;
+  animation: pulse-glow 2s infinite;
+}
+
+.stat-value--completed {
+  color: var(--ok);
+}
+
+.stat-value--failed {
+  color: var(--accent);
+}
+
+.stat-value--node {
+  font-size: 20px;
+  color: #38bdf8;
+  word-break: break-all;
+}
+
+.job-stat-card .stat-sub {
+  font-size: 11px;
+  color: var(--faint);
+  margin-top: 2px;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
+/* テンプレートバー */
+.template-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed var(--line);
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+
+.template-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.template-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.template-chip {
+  background: var(--panel-raised);
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.template-chip:hover {
+  background: #1e293b;
+  border-color: #38bdf8;
+  color: #38bdf8;
+  transform: translateY(-1px);
+}
+
+/* ジョブ投入フォーム */
+.job-submit-card {
+  border-top: 3px solid var(--accent);
+}
+
+.card-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+  padding: 3px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+.job-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.job-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.flex-1 { flex: 1; min-width: 180px; }
+.flex-2 { flex: 2; min-width: 260px; }
+
+.code-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+
+.code-hint {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: normal;
+  margin-left: 8px;
+}
+
+.code-textarea {
+  width: 100%;
+  font-family: 'JetBrains Mono', Consolas, 'Fira Code', monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  background: #090d14;
+  color: #38bdf8;
+  border: 1px solid #1e293b;
+  border-radius: 4px;
+  padding: 12px 14px;
+  resize: vertical;
+  tab-size: 4;
+}
+
+.code-textarea:focus {
+  outline: none;
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.2);
+}
+
+.job-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 4px;
+}
+
+.job-submit-btn {
+  font-size: 14px;
+  padding: 10px 24px;
+  font-weight: 700;
+  box-shadow: 0 2px 12px rgba(220, 80, 50, 0.25);
+}
+
+.warn-text {
+  font-size: 12px;
+  color: var(--accent);
+}
+
+/* フィルタータブ */
+.filter-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.filter-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.filter-tab:hover {
+  color: var(--text);
+  background: var(--panel-raised);
+}
+
+.filter-tab.is-active {
+  background: var(--line);
+  color: var(--text);
+  font-weight: 600;
+  border-color: var(--line);
+}
+
+/* ジョブ一覧テーブル */
+.jobs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.jobs-table th {
+  background: var(--panel-raised);
+  color: var(--muted);
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.jobs-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: middle;
+}
+
+.job-row:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.job-row.is-selected td {
+  background: rgba(56, 189, 248, 0.05);
+}
+
+/* バッジ類 */
+.job-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.job-badge--pending {
+  background: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+  border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+.job-badge--running {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  animation: pulse-glow 1.5s infinite;
+}
+
+.job-badge--completed {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.job-badge--failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.job-badge--cancelled {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.job-name-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.job-id-mono {
+  font-family: monospace;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.type-pill {
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--panel-raised);
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+}
+
+.node-badge {
+  font-size: 11.5px;
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.node-badge--assigned {
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+.exit-code {
+  font-family: monospace;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.exit-code--zero {
+  background: rgba(34, 197, 94, 0.1);
+  color: #22c55e;
+}
+
+.exit-code--nonzero {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.exit-code--running {
+  color: var(--muted);
+}
+
+.btn--small {
+  padding: 4px 10px;
+  font-size: 11.5px;
+}
+
+.btn--terminal {
+  background: #111827;
+  color: #38bdf8;
+  border: 1px solid #374151;
+}
+
+.btn--terminal:hover {
+  background: #1f2937;
+  border-color: #38bdf8;
+}
+
+/* 空状態 */
+.empty-jobs {
+  text-align: center;
+  padding: 48px 24px;
+}
+
+.empty-icon {
+  font-size: 36px;
+  margin-bottom: 8px;
+  opacity: 0.6;
+}
+
+.empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 4px;
+}
+
+.empty-desc {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------
+ * ターミナル出力モーダル
+ * ------------------------------------------------------------------ */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-window.terminal-modal {
+  width: 100%;
+  max-width: 860px;
+  max-height: 85vh;
+  background: #0b0f17;
+  border: 1px solid #1f293d;
+  border-radius: 6px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8), 0 0 24px rgba(56, 189, 248, 0.1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.terminal-header {
+  background: #101622;
+  border-bottom: 1px solid #1e293b;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.terminal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.terminal-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.terminal-dot.red { background: #ef4444; }
+.terminal-dot.yellow { background: #eab308; }
+.terminal-dot.green { background: #22c55e; }
+
+.terminal-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #f1f5f9;
+  font-family: monospace;
+}
+
+.terminal-close {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.terminal-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.terminal-meta {
+  background: #0e141f;
+  border-bottom: 1px solid #1a2333;
+  padding: 8px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.terminal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.terminal-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.terminal-code,
+.terminal-output {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', Consolas, 'Fira Code', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.terminal-code {
+  background: #080c14;
+  border: 1px solid #162030;
+  color: #94a3b8;
+}
+
+.terminal-output.terminal-stdout {
+  background: #050a12;
+  border: 1px solid #0f233a;
+  color: #38bdf8;
+  min-height: 80px;
+}
+
+.terminal-output.terminal-stderr {
+  background: #14090b;
+  border: 1px solid #3b1419;
+  color: #f87171;
+}
+
+.terminal-empty {
+  padding: 16px;
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+  background: #080c14;
+  border-radius: 4px;
+  border: 1px dashed #1e293b;
+}
+
+.terminal-footer {
+  background: #101622;
+  border-top: 1px solid #1e293b;
+  padding: 10px 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ==========================================================================
+   NodeDetail 他PCとのPing (ピア間相互遅延)
+   ========================================================================== */
+.peer-latencies-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.peer-latencies-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.peer-lat-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: #161c24;
+  border: 1px solid #28313e;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.peer-lat-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-1);
+  font-weight: 500;
+}
+
+.peer-lat-val {
+  font-size: 12px;
+  font-weight: 600;
+  color: #38bdf8;
+}
+
+.peer-lat-val.is-offline {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.peer-lat-val.is-probing {
+  color: #eab308;
+  font-size: 11px;
+}
+
+/* ==========================================================================
+   相互Ping遅延マトリクス (Full Mesh Latency Matrix)
+   ========================================================================== */
+.panel--matrix {
+  margin-top: 20px;
+}
+
+.latency-matrix-card {
+  padding: 16px;
+  background: var(--surface);
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+
+.matrix-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.matrix-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+  margin: 0 0 4px 0;
+}
+
+.matrix-desc {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.matrix-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.legend-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+.legend-chip--fast {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.legend-chip--good {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.legend-chip--fair {
+  background: rgba(234, 179, 8, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+.legend-chip--slow {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.matrix-table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #11161d;
+}
+
+.matrix-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+}
+
+.matrix-corner {
+  background: #161c24;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 10px 14px;
+  text-align: left;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.matrix-col-header {
+  background: #161c24;
+  padding: 8px 12px;
+  border-right: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+
+.matrix-col-header:hover {
+  background: #1e2632;
+}
+
+.matrix-col-header.is-selected {
+  background: #252028;
+  border-bottom-color: var(--accent);
+}
+
+.matrix-row-header {
+  background: #161c24;
+  padding: 8px 12px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-soft);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+
+.matrix-row-header:hover {
+  background: #1e2632;
+}
+
+.matrix-row-header.is-selected {
+  background: #252028;
+  border-right-color: var(--accent);
+}
+
+.is-selected-row td {
+  background-color: rgba(134, 59, 255, 0.05);
+}
+
+.matrix-node-name {
+  font-weight: 600;
+  margin: 0 4px;
+}
+
+.matrix-local-badge {
+  display: inline-block;
+  padding: 0 4px;
+  margin-left: 4px;
+  border-radius: 2px;
+  font-size: 9.5px;
+  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  vertical-align: middle;
+}
+
+.matrix-cell {
+  padding: 8px 12px;
+  border-right: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+  text-align: center;
+  transition: background 0.12s ease;
+}
+
+.matrix-cell--self {
+  background: #0d1117;
+  color: var(--muted);
+}
+
+.matrix-self-label {
+  font-size: 11px;
+  color: #4b5563;
+}
+
+.matrix-cell--fast .matrix-val {
+  color: #34d399;
+}
+
+.matrix-cell--good .matrix-val {
+  color: #38bdf8;
+}
+
+.matrix-cell--fair .matrix-val {
+  color: #fbbf24;
+}
+
+.matrix-cell--slow .matrix-val {
+  color: #f87171;
+}
+
+.matrix-cell--offline .matrix-val--down {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.matrix-cell--unknown .matrix-val--probing {
+  color: #eab308;
+  font-size: 10.5px;
+}
+
+.matrix-cell.is-cell-highlight {
+  background: rgba(134, 59, 255, 0.08);
+  font-weight: bold;
 }

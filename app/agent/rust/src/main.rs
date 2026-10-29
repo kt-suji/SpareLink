@@ -3,6 +3,7 @@ mod config;
 mod discovery;
 mod evaluator;
 mod gui;
+mod job_runner;
 mod models;
 mod native_probe;
 mod p2p;
@@ -22,6 +23,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use config::{AppConfig, EvaluatorSettings};
 use discovery::{DiscoveryConfig, TransportKind};
+use job_runner::JobRunner;
 use models::{LocalAgentTelemetryMessage, ProbeMetrics};
 use p2p::{P2PMessage, PeerManager};
 
@@ -175,8 +177,17 @@ async fn run_agent_backend(
     };
 
     let peer_manager = Arc::new(PeerManager::new(
-        local_id,
+        local_id.clone(),
         discovery_provider,
+        local_telemetry_holder.clone(),
+    ));
+
+    let my_pc_name = initial_config.agent.node_name.clone();
+    let job_runner = Arc::new(JobRunner::new(
+        local_id.clone(),
+        if my_pc_name.is_empty() { local_id.clone() } else { my_pc_name },
+        peer_manager.clone(),
+        config.clone(),
         local_telemetry_holder.clone(),
     ));
 
@@ -291,8 +302,9 @@ async fn run_agent_backend(
 
     // 5. Dedicated Web Dashboard HTTP Server (Port 5180)
     let config_for_web = config.clone();
+    let job_runner_for_web = job_runner.clone();
     tokio::spawn(async move {
-        web_server::run_dashboard_server(5180, config_for_web).await;
+        web_server::run_dashboard_server(5180, config_for_web, job_runner_for_web).await;
     });
 
     while let Ok((stream, peer_addr)) = listener.accept().await {
@@ -300,6 +312,7 @@ async fn run_agent_backend(
         let mut rx = tx.subscribe();
         let latest_metrics = latest_metrics.clone();
         let peer_manager_ws = peer_manager.clone();
+        let job_runner_ws = job_runner.clone();
 
         tokio::spawn(async move {
             match tokio_tungstenite::accept_async(stream).await {
@@ -317,12 +330,21 @@ async fn run_agent_backend(
                                 match msg_opt {
                                     Some(Ok(Message::Text(text))) => {
                                         if let Ok(p2p_msg) = serde_json::from_str::<P2PMessage>(&text) {
-                                            if let P2PMessage::Ping { sender_id, sender_name, telemetry, .. } = p2p_msg {
-                                                if let Some(pong) = peer_manager_ws.handle_incoming_ping(sender_id, sender_name, telemetry).await {
-                                                    if let Ok(pong_json) = serde_json::to_string(&pong) {
-                                                        let _ = ws_stream.send(Message::Text(pong_json.into())).await;
+                                            match p2p_msg {
+                                                P2PMessage::Ping { sender_id, sender_name, telemetry, .. } => {
+                                                    if let Some(pong) = peer_manager_ws.handle_incoming_ping(sender_id, sender_name, telemetry).await {
+                                                        if let Ok(pong_json) = serde_json::to_string(&pong) {
+                                                            let _ = ws_stream.send(Message::Text(pong_json.into())).await;
+                                                        }
                                                     }
                                                 }
+                                                P2PMessage::JobSubmit { job } => {
+                                                    job_runner_ws.handle_remote_job_submit(job).await;
+                                                }
+                                                P2PMessage::JobUpdate { job } => {
+                                                    job_runner_ws.update_job(job).await;
+                                                }
+                                                _ => {}
                                             }
                                         }
                                     }

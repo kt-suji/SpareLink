@@ -91,25 +91,37 @@ export function Topology({ nodes, links, localNodeId, selectedId, onSelect }: To
         })}
       </g>
 
-      {/* リンク上の遅延測定値ラベル */}
+      {/* リンク上の遅延測定値ラベル（自PCとの通信および他PC同士のPingも表示） */}
       <g>
-        {links
-          .filter((link) => link.sourceId === localNodeId || link.targetId === localNodeId)
+        {[...links]
+          .sort((l1, l2) => {
+            const l1Selected = l1.sourceId === selectedId || l1.targetId === selectedId ? 2 : 0
+            const l2Selected = l2.sourceId === selectedId || l2.targetId === selectedId ? 2 : 0
+            const l1Local = l1.sourceId === localNodeId || l1.targetId === localNodeId ? 1 : 0
+            const l2Local = l2.sourceId === localNodeId || l2.targetId === localNodeId ? 1 : 0
+            return (l1Selected + l1Local) - (l2Selected + l2Local)
+          })
           .map((link) => {
             const a = nodeMap.get(link.sourceId)
             const b = nodeMap.get(link.targetId)
             if (!a || !b) return null
 
+            const involvesLocal = a.node.id === localNodeId || b.node.id === localNodeId
             const isDown = link.status === 'disconnected'
             const text = isDown ? '切断' : link.latencyMs === null ? '—' : `${link.latencyMs} ms`
-            const mx = (a.x + b.x) / 2
-            const my = (a.y + b.y) / 2
+            
+            // ピア同士の対角線が中心付近で重ならないよう、位置をリンクごとに適度に調整
+            const ratio = involvesLocal ? 0.5 : (link.sourceId < link.targetId ? 0.42 : 0.58)
+            const mx = a.x + (b.x - a.x) * ratio
+            const my = a.y + (b.y - a.y) * ratio
             const w = text.length * 7 + 12
+
+            const isSelected = a.node.id === selectedId || b.node.id === selectedId
 
             return (
               <g
                 key={`label-${link.sourceId}-${link.targetId}`}
-                className={`topo-latency ${isDown ? 'is-down' : ''}`}
+                className={`topo-latency ${involvesLocal ? 'is-local' : 'is-peer'} ${isDown ? 'is-down' : ''} ${isSelected ? 'is-selected' : ''}`}
               >
                 <rect x={mx - w / 2} y={my - 9} width={w} height={18} rx={2} />
                 <text x={mx} y={my + 4} textAnchor="middle">

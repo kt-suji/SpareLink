@@ -1,11 +1,14 @@
 import type { DataSource, PeerNode } from '../types'
 import { Meter } from './Meter'
 import { SourceTag } from './SourceTag'
+import { getLatencyBetween } from './LatencyMatrix'
 
 interface NodeDetailProps {
   node: PeerNode
   isLocal: boolean
   source: DataSource
+  allNodes?: PeerNode[]
+  localNodeId?: string
 }
 
 function Gauge({
@@ -33,7 +36,7 @@ function Gauge({
   )
 }
 
-export function NodeDetail({ node, isLocal, source }: NodeDetailProps) {
+export function NodeDetail({ node, isLocal, source, allNodes, localNodeId }: NodeDetailProps) {
   const { surplus } = node
   const usedMemoryGb =
     node.memoryTotalGb !== null && node.memoryPercent !== null
@@ -155,7 +158,7 @@ export function NodeDetail({ node, isLocal, source }: NodeDetailProps) {
           </dd>
         </div>
         <div>
-          <dt>応答時間</dt>
+          <dt>このPCとのPing</dt>
           <dd className="num">
             {isLocal ? '—（自身）' : node.latencyMs === null ? '未取得' : `${node.latencyMs} ms`}
           </dd>
@@ -169,6 +172,32 @@ export function NodeDetail({ node, isLocal, source }: NodeDetailProps) {
           <dd>{node.os ?? '不明'}</dd>
         </div>
       </dl>
+
+      {/* 4. クラスタ内 他PCとのPing (相互応答時間) */}
+      {allNodes && allNodes.length > 1 && (
+        <section className="peer-latencies-section" aria-label="他PCとのPing">
+          <div className="detail-section-label">他PCとのPing (往復応答時間)</div>
+          <div className="peer-latencies-list">
+            {allNodes
+              .filter((other) => other.id !== node.id)
+              .map((other) => {
+                const { latencyMs, isOffline } = getLatencyBetween(node, other, localNodeId || '')
+                return (
+                  <div key={`lat-${other.id}`} className="peer-lat-item">
+                    <span className="peer-lat-name">
+                      <span className={`status-dot status-dot--${other.status}`} />
+                      {other.name}
+                      {other.id === localNodeId && <span className="local-tag">自PC</span>}
+                    </span>
+                    <span className={`peer-lat-val num ${isOffline ? 'is-offline' : latencyMs === null ? 'is-probing' : ''}`}>
+                      {isOffline ? '切断' : latencyMs !== null ? `${latencyMs} ms` : '測定中…'}
+                    </span>
+                  </div>
+                )
+              })}
+          </div>
+        </section>
+      )}
     </>
   )
 }

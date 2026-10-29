@@ -21,6 +21,18 @@ pub enum P2PMessage {
         timestamp_ms: u64,
         telemetry: LocalAgentTelemetryMessage,
     },
+    /// リモートPCへの分散Job実行要求
+    JobSubmit {
+        job: crate::models::ComputeJob,
+    },
+    /// Jobの実行状態・ログ更新通知
+    JobUpdate {
+        job: crate::models::ComputeJob,
+    },
+    /// Jobのキャンセル要求
+    JobCancel {
+        job_id: String,
+    },
 }
 
 pub use crate::models::PeerNodeState;
