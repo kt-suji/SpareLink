@@ -12,19 +12,22 @@
 
 ## 主な特徴
 
-- **実効余剰能力の動的評価（単なる「100% - 使用率」ではない）**:
-  CPU使用率の空きだけでなく、各PCのアーキテクチャ・並列処理性能（起動時の高速ベンチマーク）、現在負荷、安全マージン（CPU 20%、メモリ 4GB等）を総合考慮し、**「ホストPCの操作快適性を損なわずに割り当て可能な実効ポイント（pt）」**を算出します。
+- **メモリ容量・比率を考慮した総合余力評価（Composite Benchmark Score）**:
+  単なるCPU使用率の空きだけでなく、CPUマイクロベンチマーク性能、実測負荷、安全マージン（CPU 20%、メモリ 4GB等）に加え、**物理RAM総量およびコアあたりメモリ比率（GB/core）**を評価因子として統合。メモリ不足によるスラッシングを防ぎつつ、大容量ノードを正当に優遇評価します。
+- **フルメッシュ相互Ping測定 & 遅延マトリクス**:
+  自PCから他PCへの遅延だけでなく、クラスタ内の全PC相互間の通信遅延（RTT）をP2Pハートビートで自動収集。$N \times N$ マトリクスやトポロジーマップ上でリアルタイムに可視化します。
+- **ワンクリック・クラスタ一括自動アップデート**:
+  Google Driveやネットワーク同期フォルダから起動された場合でも、ローカル退避ランナー（`%LOCALAPPDATA%`）機構により常駐ファイルロックを回避。親PCのWebダッシュボードからワンクリックで全子PCへ更新命令をブロードキャストし、安全に自己置換・再起動できます。
 - **高速CPUマイクロベンチマーク（頭打ちゼロ設計）**:
-  割り算（div）のシリアル待機による頭打ちを排除し、命令レベル並列性（ILP）・32KBキャッシュ走査・FPU積和演算を組み合わせた独自ワークロードを搭載。約0.08秒で完了し、旧世代CPU（例: i7-10700K）と最新CPU（例: Ryzen 7 7800X3D）のアーキテクチャ差・IPCを素直にスコアへ反映します。
+  命令レベル並列性（ILP）・32KBキャッシュ走査・FPU積和演算を組み合わせた独自ワークロードを搭載。約0.08秒で完了し、旧世代CPUと最新CPUのアーキテクチャ差・IPCを素直にスコアへ反映します。
 - **単独exe・ゼロ依存で動作（Windowsネイティブプローブ）**:
-  エージェントは単一の実行ファイル（約2MB）として完結。サブPC側で Python や Node.js をインストールすることなく、Windows OS の Native API（`GlobalMemoryStatusEx`, `GetSystemTimes`）から直接負荷とメモリを自動取得します。
+  エージェントは単一の実行ファイルとして完結。サブPC側で Python や Node.js をインストールすることなく、Windows OS の Native API（`GlobalMemoryStatusEx`, `GetSystemTimes`）から直接負荷とメモリを自動取得します。
 - **プラグアブルな通信方式（Tailscale / WireGuard / 固定IP）**:
   - **Tailscale**: 同一Tailnet内のオンライン端末をゼロコンフィグで自動検出。
   - **WireGuard / Static**: 設定ファイルや環境変数で指定したピアと対等に接続。
   - **LAN**: サブネット内の端末探索。
-  通信層は抽象化されており、設定変更だけでシームレスに切り替え可能です。
-- **オープンな拡張機能アーキテクチャ**:
-  ローカルの WebSocket API（`ws://127.0.0.1:3001`）へ接続するだけで、クラスタ全体の余剰CPU・メモリ状況をストリーミング受信可能。外部ソフト側から容易に連携プラグインを作成できます。
+- **オープンな拡張機能・ジョブ実行アーキテクチャ**:
+  ローカルの WebSocket API（`ws://127.0.0.1:3001`）および REST API（`/api/jobs`, `/api/config`）経由で、クラスタ全体の余剰情報取得やジョブ投入が容易に行えます。
 
 ---
 
@@ -56,14 +59,22 @@ SpareLink/
 │   │   │   │   ├── bench.rs       # 高速CPUマイクロベンチマーク
 │   │   │   │   ├── config.rs      # 設定ファイルローダー (sparelink.toml)
 │   │   │   │   ├── discovery/     # ピア探索プロバイダー (Tailscale / WireGuard / Static)
-│   │   │   │   ├── evaluator.rs   # 余剰計算資源の算出ロジック
+│   │   │   │   ├── evaluator.rs   # 余剰計算資源＆メモリ比率総合評価ロジック
+│   │   │   │   ├── gui.rs         # デスクトップ常駐ミニGUI (eframe)
+│   │   │   │   ├── job_runner.rs  # 分散ジョブ実行・管理エンジン
+│   │   │   │   ├── models.rs      # テレメトリ・データ構造定義
 │   │   │   │   ├── native_probe.rs# Windows API直接監視プローブ (ゼロ依存)
-│   │   │   │   ├── p2p/           # P2Pハートビート・状態同期マネージャー
-│   │   │   │   └── main.rs        # WebSocketサーバー & メインループ
+│   │   │   │   ├── p2p/           # P2Pハートビート・状態同期・メッセージプロトコル
+│   │   │   │   ├── updater.rs     # 自動アップデート＆Google Driveロック回避ランナー
+│   │   │   │   ├── web_server.rs  # REST API & WebSocketサーバー
+│   │   │   │   └── main.rs        # エージェントエントリーポイント
 │   │   │   └── Cargo.toml
 │   │   └── python/           # 任意で利用可能なPython監視スクリプト
 │   └── front/                # WebダッシュボードUI (React 19 + TypeScript + Vite)
+│       └── src/
+│           ├── components/   # Topology, LatencyMatrix, SettingsPanel, JobManagement 等
 ├── sparelink.toml            # 統合設定ファイル
+├── CHANGELOG.md              # バージョン別変更履歴
 ├── requirements.txt          # Python用依存関係（Pythonプローブ使用時のみ）
 └── README.md
 ```
@@ -198,6 +209,23 @@ async def watch_sparelink():
 
 asyncio.run(watch_sparelink())
 ```
+
+### REST API 仕様
+
+エージェント（ポート `3001`）は WebSocket に加え、各種制御用 REST API を提供します：
+
+| メソッド | パス | 説明 |
+| :--- | :--- | :--- |
+| `GET` | `/api/config` | 現在のエージェント設定（`sparelink.toml` 内容）を取得 |
+| `POST` | `/api/config` | エージェント設定を動的に更新（ファイル保存＆即時適用） |
+| `GET` | `/api/jobs` | 登録済みジョブ一覧とその実行状態を取得 |
+| `POST` | `/api/jobs` | 新規分散ジョブを登録・キューへ投入 |
+| `POST` | `/api/jobs/:id/cancel` | 実行中・待機中ジョブのキャンセル |
+| `GET` | `/api/binary` | 自身の最新実行バイナリ（exeストリーム）を配信 |
+| `POST` | `/api/cluster/update` | 全接続ピアへ一括アップデート命令をブロードキャスト |
+| `POST` | `/api/self/update` | 単一ノードのセルフアップデートを実行 |
+
+詳細なリリース履歴・各バージョンの追加機能は [CHANGELOG.md](CHANGELOG.md) をご覧ください。
 
 ---
 
