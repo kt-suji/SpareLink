@@ -53,6 +53,9 @@ async fn process_and_broadcast(
     tx: &broadcast::Sender<String>,
     sharing_paused: &Arc<AtomicBool>,
 ) {
+    let ram_factor = evaluator::calculate_ram_capacity_factor(metrics.cpu_cores, metrics.memory_total_gb);
+    let composite_benchmark_score = (benchmark_score as f64 * ram_factor).round() as u32;
+
     let mut surplus = evaluator::evaluate_surplus_capacity_with_config(
         &metrics,
         Some(benchmark_score),
@@ -68,17 +71,20 @@ async fn process_and_broadcast(
 
     let known_peers = peer_manager.get_all_peers().await;
     let tailscale = peer_manager.get_tailscale_status().await;
+    let ram_per_core = metrics.memory_total_gb / (metrics.cpu_cores as f64).max(1.0);
 
     println!(
-        "[{}] CPU: {:>4.1}% | MEM: {:>4.1}% ({:.1}/{:.1}GB) | Surplus CPU: {:>5} pt{} | Surplus MEM: {:>4.1}GB | Peers: {} online",
+        "[{}] CPU: {:>4.1}% | MEM: {:>4.1}% ({:.1}/{:.1}GB) | Score: {} pt ({:.2}x, {:.1}GB/c) | Surplus: {:>5} pt{} | Peers: {} online",
         metrics.pc_name,
         metrics.cpu_percent,
         metrics.memory_percent,
         (metrics.memory_total_gb - metrics.memory_available_gb).max(0.0),
         metrics.memory_total_gb,
+        composite_benchmark_score,
+        ram_factor,
+        ram_per_core,
         surplus.allocatable_cpu_score.unwrap_or(0),
         if is_paused { " [PAUSED]" } else { "" },
-        surplus.allocatable_memory_gb.unwrap_or(0.0),
         known_peers.iter().filter(|p| p.status == "online").count(),
     );
 
@@ -90,7 +96,7 @@ async fn process_and_broadcast(
         memory_percent: metrics.memory_percent,
         memory_total_gb: metrics.memory_total_gb,
         memory_available_gb: metrics.memory_available_gb,
-        cpu_benchmark_score: Some(benchmark_score),
+        cpu_benchmark_score: Some(composite_benchmark_score),
         surplus,
         peers: Some(known_peers),
         tailscale,

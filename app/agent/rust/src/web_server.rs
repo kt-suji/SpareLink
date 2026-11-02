@@ -5,7 +5,7 @@ use tokio::net::TcpListener;
 const EMBEDDED_INDEX_HTML: &[u8] = include_bytes!("../../../front/dist/index.html");
 const EMBEDDED_FAVICON_SVG: &[u8] = include_bytes!("../../../front/dist/favicon.svg");
 const EMBEDDED_ICONS_SVG: &[u8] = include_bytes!("../../../front/dist/icons.svg");
-const EMBEDDED_JS: &[u8] = include_bytes!("../../../front/dist/assets/index-D-p3Ryuc.js");
+const EMBEDDED_JS: &[u8] = include_bytes!("../../../front/dist/assets/index-BiQ0GDY7.js");
 const EMBEDDED_CSS: &[u8] = include_bytes!("../../../front/dist/assets/index-LHwY0Eqm.css");
 
 fn get_content_type(path: &str) -> &'static str {

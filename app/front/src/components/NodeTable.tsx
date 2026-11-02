@@ -85,7 +85,7 @@ export function NodeTable({ nodes, localNodeId, selectedId, source, onSelect }: 
                 余剰計算資源 (割当可能CPU / メモリ)
               </th>
               <th scope="col" className="col-num">応答時間</th>
-              <th scope="col" className="col-optional">性能スコア</th>
+              <th scope="col" className="col-optional" title="CPU演算性能 × メモリ総量バランスから算出した総合性能スコア">総合スコア</th>
             </tr>
           </thead>
           <tbody>

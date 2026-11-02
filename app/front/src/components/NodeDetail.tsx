@@ -43,6 +43,11 @@ export function NodeDetail({ node, isLocal, source, allNodes, localNodeId }: Nod
       ? (node.memoryTotalGb * node.memoryPercent) / 100
       : null
 
+  const ramPerCore =
+    node.memoryTotalGb !== null && node.cpuCores !== null && node.cpuCores > 0
+      ? (node.memoryTotalGb / node.cpuCores).toFixed(1)
+      : null
+
   return (
     <>
       <header className="panel-head">
@@ -95,7 +100,7 @@ export function NodeDetail({ node, isLocal, source, allNodes, localNodeId }: Nod
         </header>
 
         <p className="surplus-note-head">
-          ※ 単純な「100% − 使用率」ではなく、基礎性能と安全余裕から算出した実効割当枠です。
+          ※ 単純な「100% − 使用率」ではなく、CPU基礎性能×メモリ総量バランスおよび安全余裕から算出した実効割当枠です。
         </p>
 
         <div className="surplus-metrics-grid">
@@ -112,7 +117,7 @@ export function NodeDetail({ node, isLocal, source, allNodes, localNodeId }: Nod
               )}
             </span>
             <span className="sm-sub">
-              基準性能: {node.cpuBenchmarkScore !== null ? `${node.cpuBenchmarkScore.toLocaleString()} pt` : '未測定'}
+              基準総合性能: {node.cpuBenchmarkScore !== null ? `${node.cpuBenchmarkScore.toLocaleString()} pt` : '未測定'}
             </span>
           </div>
 
@@ -155,6 +160,13 @@ export function NodeDetail({ node, isLocal, source, allNodes, localNodeId }: Nod
             <span className={`status status--${node.status}`}>
               {node.status === 'online' ? 'オンライン' : 'オフライン'}
             </span>
+          </dd>
+        </div>
+        <div>
+          <dt>メモリ搭載量</dt>
+          <dd className="num">
+            {node.memoryTotalGb !== null ? `${node.memoryTotalGb} GB` : '不明'}
+            {ramPerCore && <span className="value-muted" style={{ fontSize: '11px', marginLeft: '4px' }}>({ramPerCore} GB/コア)</span>}
           </dd>
         </div>
         <div>

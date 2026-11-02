@@ -1,6 +1,6 @@
 [package]
 name = "sparelink-agent"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2024"
 description = "Lightweight P2P surplus compute discovery and telemetry agent"
 license = "MIT OR Apache-2.0"
