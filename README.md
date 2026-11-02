@@ -60,19 +60,20 @@ SpareLink/
 │   │   │   │   ├── config.rs      # 設定ファイルローダー (sparelink.toml)
 │   │   │   │   ├── discovery/     # ピア探索プロバイダー (Tailscale / WireGuard / Static)
 │   │   │   │   ├── evaluator.rs   # 余剰計算資源＆メモリ比率総合評価ロジック
-│   │   │   │   ├── gui.rs         # デスクトップ常駐ミニGUI (eframe)
+│   │   │   │   ├── gui/           # デスクトップ常駐ミニGUI (widgets, theme, views, mod)
 │   │   │   │   ├── job_runner.rs  # 分散ジョブ実行・管理エンジン
 │   │   │   │   ├── models.rs      # テレメトリ・データ構造定義
 │   │   │   │   ├── native_probe.rs# Windows API直接監視プローブ (ゼロ依存)
 │   │   │   │   ├── p2p/           # P2Pハートビート・状態同期・メッセージプロトコル
 │   │   │   │   ├── updater.rs     # 自動アップデート＆Google Driveロック回避ランナー
-│   │   │   │   ├── web_server.rs  # REST API & WebSocketサーバー
+│   │   │   │   ├── web_server/    # REST API & Webダッシュボード配信サーバー (assets, routes, mod)
 │   │   │   │   └── main.rs        # エージェントエントリーポイント
 │   │   │   └── Cargo.toml
 │   │   └── python/           # 任意で利用可能なPython監視スクリプト
 │   └── front/                # WebダッシュボードUI (React 19 + TypeScript + Vite)
 │       └── src/
-│           ├── components/   # Topology, LatencyMatrix, SettingsPanel, JobManagement 等
+│           ├── components/   # Topology, LatencyMatrix, SettingsPanel, JobManagement, Header 等
+│           └── styles/       # 機能別モジュールCSS (variables, layout, nodes, topology, settings, jobs)
 ├── sparelink.toml            # 統合設定ファイル
 ├── CHANGELOG.md              # バージョン別変更履歴
 ├── requirements.txt          # Python用依存関係（Pythonプローブ使用時のみ）

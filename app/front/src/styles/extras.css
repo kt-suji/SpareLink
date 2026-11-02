@@ -1,0 +1,319 @@
+/* ==========================================================================
+   NodeDetail 他PCとのPing (ピア間相互遅延)
+   ========================================================================== */
+.peer-latencies-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.peer-latencies-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.peer-lat-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: #161c24;
+  border: 1px solid #28313e;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.peer-lat-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-1);
+  font-weight: 500;
+}
+
+.peer-lat-val {
+  font-size: 12px;
+  font-weight: 600;
+  color: #38bdf8;
+}
+
+.peer-lat-val.is-offline {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.peer-lat-val.is-probing {
+  color: #eab308;
+  font-size: 11px;
+}
+
+/* ==========================================================================
+   相互Ping遅延マトリクス (Full Mesh Latency Matrix)
+   ========================================================================== */
+.panel--matrix {
+  margin-top: 20px;
+}
+
+.latency-matrix-card {
+  padding: 16px;
+  background: var(--surface);
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+
+.matrix-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.matrix-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+  margin: 0 0 4px 0;
+}
+
+.matrix-desc {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.matrix-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.legend-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+.legend-chip--fast {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.legend-chip--good {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.legend-chip--fair {
+  background: rgba(234, 179, 8, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+.legend-chip--slow {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.matrix-table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #11161d;
+}
+
+.matrix-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+}
+
+.matrix-corner {
+  background: #161c24;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 10px 14px;
+  text-align: left;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.matrix-col-header {
+  background: #161c24;
+  padding: 8px 12px;
+  border-right: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+
+.matrix-col-header:hover {
+  background: #1e2632;
+}
+
+.matrix-col-header.is-selected {
+  background: #252028;
+  border-bottom-color: var(--accent);
+}
+
+.matrix-row-header {
+  background: #161c24;
+  padding: 8px 12px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-soft);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+
+.matrix-row-header:hover {
+  background: #1e2632;
+}
+
+.matrix-row-header.is-selected {
+  background: #252028;
+  border-right-color: var(--accent);
+}
+
+.is-selected-row td {
+  background-color: rgba(134, 59, 255, 0.05);
+}
+
+.matrix-node-name {
+  font-weight: 600;
+  margin: 0 4px;
+}
+
+.matrix-local-badge {
+  display: inline-block;
+  padding: 0 4px;
+  margin-left: 4px;
+  border-radius: 2px;
+  font-size: 9.5px;
+  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  vertical-align: middle;
+}
+
+.matrix-cell {
+  padding: 8px 12px;
+  border-right: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+  text-align: center;
+  transition: background 0.12s ease;
+}
+
+.matrix-cell--self {
+  background: #0d1117;
+  color: var(--muted);
+}
+
+.matrix-self-label {
+  font-size: 11px;
+  color: #4b5563;
+}
+
+.matrix-cell--fast .matrix-val {
+  color: #34d399;
+}
+
+.matrix-cell--good .matrix-val {
+  color: #38bdf8;
+}
+
+.matrix-cell--fair .matrix-val {
+  color: #fbbf24;
+}
+
+.matrix-cell--slow .matrix-val {
+  color: #f87171;
+}
+
+.matrix-cell--offline .matrix-val--down {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.matrix-cell--unknown .matrix-val--probing {
+  color: #eab308;
+  font-size: 10.5px;
+}
+
+.matrix-cell.is-cell-highlight {
+  background: rgba(134, 59, 255, 0.08);
+  font-weight: bold;
+}
+
+/* ==========================================================================
+   全ノード一括更新 (Cluster One-Click Update)
+   ========================================================================== */
+.update-all-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  margin-left: 12px;
+  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.3);
+  transition: all 0.15s ease;
+}
+
+.update-all-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #9d75f8, #7477f3);
+  box-shadow: 0 4px 10px rgba(99, 102, 241, 0.45);
+  transform: translateY(-1px);
+}
+
+.update-all-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.update-alert-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-radius: 6px;
+  color: #34d399;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.update-alert-banner button {
+  background: none;
+  border: none;
+  color: #34d399;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+

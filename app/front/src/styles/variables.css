@@ -1,0 +1,56 @@
+/*
+ * SpareLink フロントエンド スタイル
+ *
+ * 方針:
+ * - 背景は黒に近いネイビー、パネルは少し明るいダークグレー
+ * - アクセント色（#F0644F）は「このPC」「選択中」「注意喚起」など、注目させたい箇所に限定して使う
+ * - 状態色（オンライン=緑 / 高負荷=黄 / オフライン=灰）はアクセント色と役割を分ける
+ * - サンプル値は斜線パターンで表し、実測値（単色）と見分けられるようにする
+ * - 外部フォントは読み込まず、Windows 標準フォントを使う（オフラインのデスクトップアプリを想定）
+ */
+
+:root {
+  --bg: #0a0e15;
+  --chrome: #0e131b;
+  --panel: #151a22;
+  --panel-raised: #1b212b;
+  --canvas: #10151c;
+  --line: #2a313c;
+  --line-soft: #20262f;
+
+  --text: #e6e9ef;
+  --text-2: #b3bac6;
+  --muted: #8a93a2;
+  --faint: #5f6875;
+
+  --accent: #f0644f;
+  --accent-soft: rgba(240, 100, 79, 0.1);
+  --accent-line: rgba(240, 100, 79, 0.5);
+
+  --ok: #4fb384;
+  --warn: #e0a43b;
+  --off: #6b7380;
+  --meter-track: #262d38;
+  --meter-base: #a3aebf;
+
+  --font-ui: 'Segoe UI', 'Yu Gothic UI', 'Meiryo UI', system-ui, sans-serif;
+  --font-mono: 'Cascadia Mono', Consolas, ui-monospace, monospace;
+
+  color-scheme: dark;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background: var(--bg);
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
