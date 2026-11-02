@@ -33,6 +33,11 @@ pub enum P2PMessage {
     JobCancel {
         job_id: String,
     },
+    /// エージェント自身の自動更新・再起動要求
+    NodeUpdate {
+        target_version: String,
+        download_url: Option<String>,
+    },
 }
 
 pub use crate::models::PeerNodeState;

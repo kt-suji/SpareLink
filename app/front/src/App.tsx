@@ -24,6 +24,26 @@ function App() {
   const [selectedId, setSelectedId] = useState(snapshot.localNodeId)
   const [activeTab, setActiveTab] = useState<'overview' | 'settings' | 'jobs'>('overview')
   const [viewMode, setViewMode] = useState<'both' | 'topology' | 'table' | 'matrix'>('both')
+  const [isUpdating, setIsUpdating] = useState(false)
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null)
+
+  const handleClusterUpdate = async () => {
+    if (!window.confirm('接続中の全PC（WINSERVER、GORONEPC等）へ最新バイナリの自動更新・再起動シグナルを一括送信しますか？\n各PCが自律的に最新版に切り替わります。')) {
+      return
+    }
+    setIsUpdating(true)
+    try {
+      const res = await fetch('http://localhost:5180/api/cluster/update', { method: 'POST' })
+      const data = await res.json()
+      setUpdateMessage(data.message || '全PCへ更新要求を送信しました！順次最新版へ切り替わります。')
+      setTimeout(() => setUpdateMessage(null), 8000)
+    } catch {
+      setUpdateMessage('更新要求の送信に失敗しました（Webサーバー疎通エラー）')
+      setTimeout(() => setUpdateMessage(null), 5000)
+    } finally {
+      setIsUpdating(false)
+    }
+  }
 
   const { nodes, links, localNodeId, source } = snapshot
   const localNode = nodes.find((n) => n.id === localNodeId)
@@ -37,7 +57,7 @@ function App() {
         <div className="brand">
           <span className="brand-mark" aria-hidden="true" />
           <span className="brand-name">SpareLink</span>
-          <span className="brand-version">v0.1.0</span>
+          <span className="brand-version">v0.1.7</span>
         </div>
         <div className="titlebar-status">
           <span className="ts-item">
@@ -85,6 +105,17 @@ function App() {
             <span className="ts-label">最終更新</span>
             <span className="ts-value num">{snapshot.capturedAt ?? '—'}</span>
           </span>
+          {agentConnected && (
+            <button
+              type="button"
+              className="update-all-btn"
+              onClick={handleClusterUpdate}
+              disabled={isUpdating}
+              title="クラスタ内の全PCへ最新バイナリの自動更新・再起動シグナルを一括送信します"
+            >
+              {isUpdating ? '更新シグナル送信中…' : '⚡ 全PCを一括自動更新'}
+            </button>
+          )}
         </div>
       </header>
 
@@ -113,6 +144,12 @@ function App() {
         </nav>
 
         <main className="main">
+          {updateMessage && (
+            <div className="update-alert-banner" role="status">
+              <span>🚀 {updateMessage}</span>
+              <button type="button" onClick={() => setUpdateMessage(null)} aria-label="閉じる">×</button>
+            </div>
+          )}
           {activeTab === 'settings' ? (
             <SettingsPanel localNode={localNode} agentConnected={agentConnected} />
           ) : activeTab === 'jobs' ? (

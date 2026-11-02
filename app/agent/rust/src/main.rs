@@ -7,6 +7,7 @@ mod job_runner;
 mod models;
 mod native_probe;
 mod p2p;
+mod updater;
 mod web_server;
 
 use std::path::PathBuf;
@@ -309,8 +310,9 @@ async fn run_agent_backend(
     // 5. Dedicated Web Dashboard HTTP Server (Port 5180)
     let config_for_web = config.clone();
     let job_runner_for_web = job_runner.clone();
+    let peer_manager_for_web = peer_manager.clone();
     tokio::spawn(async move {
-        web_server::run_dashboard_server(5180, config_for_web, job_runner_for_web).await;
+        web_server::run_dashboard_server(5180, config_for_web, job_runner_for_web, peer_manager_for_web).await;
     });
 
     while let Ok((stream, peer_addr)) = listener.accept().await {
@@ -349,6 +351,15 @@ async fn run_agent_backend(
                                                 }
                                                 P2PMessage::JobUpdate { job } => {
                                                     job_runner_ws.update_job(job).await;
+                                                }
+                                                P2PMessage::NodeUpdate { target_version, download_url } => {
+                                                    println!("[SpareLink] 受信: 自動アップデート要求 (バージョン: {:?})", target_version);
+                                                    tokio::spawn(async move {
+                                                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                                                        if let Err(e) = updater::perform_self_update(download_url.as_deref()).await {
+                                                            eprintln!("[SpareLink Update] 自動アップデート失敗: {}", e);
+                                                        }
+                                                    });
                                                 }
                                                 _ => {}
                                             }
@@ -416,6 +427,11 @@ fn spawn_native_probe_task(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    updater::cleanup_old_binaries();
+    if let Ok(true) = updater::ensure_local_execution_if_needed() {
+        return Ok(());
+    }
+
     let config = Arc::new(RwLock::new(AppConfig::load()));
     let args: Vec<String> = std::env::args().collect();
     let headless = args.iter().any(|a| a == "--headless" || a == "--no-gui");

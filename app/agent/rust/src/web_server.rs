@@ -5,8 +5,8 @@ use tokio::net::TcpListener;
 const EMBEDDED_INDEX_HTML: &[u8] = include_bytes!("../../../front/dist/index.html");
 const EMBEDDED_FAVICON_SVG: &[u8] = include_bytes!("../../../front/dist/favicon.svg");
 const EMBEDDED_ICONS_SVG: &[u8] = include_bytes!("../../../front/dist/icons.svg");
-const EMBEDDED_JS: &[u8] = include_bytes!("../../../front/dist/assets/index-BiQ0GDY7.js");
-const EMBEDDED_CSS: &[u8] = include_bytes!("../../../front/dist/assets/index-LHwY0Eqm.css");
+const EMBEDDED_JS: &[u8] = include_bytes!("../../../front/dist/assets/index-DgReYomT.js");
+const EMBEDDED_CSS: &[u8] = include_bytes!("../../../front/dist/assets/index-UFxAU9hj.css");
 
 fn get_content_type(path: &str) -> &'static str {
     if path.ends_with(".html") || path == "/" {
@@ -72,12 +72,14 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::config::AppConfig;
 use crate::job_runner::JobRunner;
+use crate::p2p::PeerManager;
 
 /// 専用のSpareLink WebダッシュボードHTTP配信サーバー (ポート 5180)
 pub async fn run_dashboard_server(
     port: u16,
     shared_config: Arc<RwLock<AppConfig>>,
     job_runner: Arc<JobRunner>,
+    peer_manager: Arc<PeerManager>,
 ) {
     let addr = format!("0.0.0.0:{}", port);
     let listener = match TcpListener::bind(&addr).await {
@@ -100,6 +102,7 @@ pub async fn run_dashboard_server(
     while let Ok((mut stream, _)) = listener.accept().await {
         let config_clone = shared_config.clone();
         let job_runner_clone = job_runner.clone();
+        let peer_manager_clone = peer_manager.clone();
         tokio::spawn(async move {
             let mut buf = [0u8; 8192];
             let n = match stream.read(&mut buf).await {
@@ -300,6 +303,108 @@ pub async fn run_dashboard_server(
                     }
                 }
             }
+
+            if method == "OPTIONS" && (path == "/api/binary" || path == "/api/cluster/update" || path == "/api/self/update") {
+                let resp = "HTTP/1.1 204 No Content\r\n\
+                            Access-Control-Allow-Origin: *\r\n\
+                            Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n\
+                            Access-Control-Allow-Headers: Content-Type\r\n\
+                            Connection: close\r\n\r\n";
+                let _ = stream.write_all(resp.as_bytes()).await;
+                let _ = stream.flush().await;
+                return;
+            }
+
+            if method == "GET" && (path == "/api/binary" || path == "/dist/sparelink-agent.exe") {
+                    let binary_paths = [
+                        std::env::current_exe().unwrap_or_default(),
+                        PathBuf::from("dist-agent/sparelink-agent.exe"),
+                        PathBuf::from("G:\\マイドライブ\\SpareLink\\dist-agent\\sparelink-agent.exe"),
+                        PathBuf::from("G:\\My Drive\\SpareLink\\dist-agent\\sparelink-agent.exe"),
+                    ];
+
+                    let mut found_bytes = None;
+                    for bp in &binary_paths {
+                        if bp.exists() {
+                            if let Ok(bytes) = std::fs::read(bp) {
+                                if bytes.len() > 1_000_000 {
+                                    found_bytes = Some(bytes);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if let Some(bytes) = found_bytes {
+                        let header = format!(
+                            "HTTP/1.1 200 OK\r\n\
+                             Content-Type: application/octet-stream\r\n\
+                             Content-Disposition: attachment; filename=\"sparelink-agent.exe\"\r\n\
+                             Content-Length: {}\r\n\
+                             Access-Control-Allow-Origin: *\r\n\
+                             Connection: close\r\n\r\n",
+                            bytes.len()
+                        );
+                        let _ = stream.write_all(header.as_bytes()).await;
+                        let _ = stream.write_all(&bytes).await;
+                        let _ = stream.flush().await;
+                        return;
+                    } else {
+                        let err_resp = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                        let _ = stream.write_all(err_resp.as_bytes()).await;
+                        let _ = stream.flush().await;
+                        return;
+                    }
+                } else if (method == "POST" || method == "PUT") && path == "/api/cluster/update" {
+                    let current_version = env!("CARGO_PKG_VERSION");
+                    let updated_nodes = crate::updater::trigger_cluster_update(
+                        &peer_manager_clone,
+                        current_version,
+                        None,
+                    ).await;
+
+                    let resp_json = serde_json::json!({
+                        "status": "success",
+                        "message": format!("{} 台のノードへ最新版 (v{}) の自動更新シグナルを送信しました", updated_nodes.len(), current_version),
+                        "updatedNodes": updated_nodes,
+                    }).to_string();
+
+                    let header = format!(
+                        "HTTP/1.1 200 OK\r\n\
+                         Content-Type: application/json; charset=utf-8\r\n\
+                         Content-Length: {}\r\n\
+                         Access-Control-Allow-Origin: *\r\n\
+                         Connection: close\r\n\r\n",
+                        resp_json.len()
+                    );
+                    let _ = stream.write_all(header.as_bytes()).await;
+                    let _ = stream.write_all(resp_json.as_bytes()).await;
+                    let _ = stream.flush().await;
+                    return;
+                } else if (method == "POST" || method == "PUT") && path == "/api/self/update" {
+                    tokio::spawn(async {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                        let _ = crate::updater::perform_self_update(None).await;
+                    });
+
+                    let resp_json = serde_json::json!({
+                        "status": "success",
+                        "message": "自ノードの再起動・アップデートを開始しました",
+                    }).to_string();
+
+                    let header = format!(
+                        "HTTP/1.1 200 OK\r\n\
+                         Content-Type: application/json; charset=utf-8\r\n\
+                         Content-Length: {}\r\n\
+                         Access-Control-Allow-Origin: *\r\n\
+                         Connection: close\r\n\r\n",
+                        resp_json.len()
+                    );
+                    let _ = stream.write_all(header.as_bytes()).await;
+                    let _ = stream.write_all(resp_json.as_bytes()).await;
+                    let _ = stream.flush().await;
+                    return;
+                }
 
             // 3. 静的フロントエンド配信
             let (content_type, body) = resolve_asset(path);

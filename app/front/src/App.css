@@ -2719,3 +2719,59 @@ body {
   background: rgba(134, 59, 255, 0.08);
   font-weight: bold;
 }
+
+/* ==========================================================================
+   全ノード一括更新 (Cluster One-Click Update)
+   ========================================================================== */
+.update-all-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  margin-left: 12px;
+  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.3);
+  transition: all 0.15s ease;
+}
+
+.update-all-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #9d75f8, #7477f3);
+  box-shadow: 0 4px 10px rgba(99, 102, 241, 0.45);
+  transform: translateY(-1px);
+}
+
+.update-all-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.update-alert-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-radius: 6px;
+  color: #34d399;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.update-alert-banner button {
+  background: none;
+  border: none;
+  color: #34d399;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
