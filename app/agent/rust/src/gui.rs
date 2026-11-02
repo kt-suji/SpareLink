@@ -620,30 +620,64 @@ impl eframe::App for SpareLinkMonitorApp {
                                                 ui.label(RichText::new(truncate_name(&p.name, 10)).strong().size(12.0).color(name_color));
 
                                                 // 3. 右側要素: Ping (ms / Offline) + 余剰pt + |||||||| バー
+                                                // 固定幅 (Ping: 46px, 余剰スコア: 70px) を確保することで、
+                                                // 桁数の変化やオフライン表示によるバーの位置ズレ（ガタつき）を完全に防止
                                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                                    // 最右端: ping (ms または Offline)
+                                                    // 最右端: ping (ms または Offline) - 固定幅 46px
                                                     if is_online {
                                                         let ping_str = match p.latency_ms {
                                                             Some(0) => "<1 ms".to_string(),
                                                             Some(ms) => format!("{} ms", ms),
                                                             None => "-- ms".to_string(),
                                                         };
-                                                        ui.label(RichText::new(ping_str).monospace().strong().size(11.5).color(theme.ping));
+                                                        ui.add_sized(
+                                                            [46.0, 16.0],
+                                                            egui::Label::new(
+                                                                RichText::new(ping_str)
+                                                                    .monospace()
+                                                                    .strong()
+                                                                    .size(11.5)
+                                                                    .color(theme.ping),
+                                                            ),
+                                                        );
                                                     } else {
-                                                        ui.label(RichText::new("Offline").size(11.0).color(theme.offline));
-                                                    }
-
-                                                    ui.add_space(8.0);
-
-                                                    // 余剰資源 pt
-                                                    if is_online {
-                                                        let score = p.surplus.allocatable_cpu_score.unwrap_or(0);
-                                                        ui.label(RichText::new(format!("{} pt", format_thousands(score))).strong().size(11.5).color(theme.ok));
-                                                    } else {
-                                                        ui.label(RichText::new("--- pt").monospace().size(11.5).color(theme.offline));
+                                                        ui.add_sized(
+                                                            [46.0, 16.0],
+                                                            egui::Label::new(
+                                                                RichText::new("Offline")
+                                                                    .size(11.0)
+                                                                    .color(theme.offline),
+                                                            ),
+                                                        );
                                                     }
 
                                                     ui.add_space(6.0);
+
+                                                    // 余剰資源 pt - 固定幅 70px で右揃え配置
+                                                    if is_online {
+                                                        let score = p.surplus.allocatable_cpu_score.unwrap_or(0);
+                                                        ui.add_sized(
+                                                            [70.0, 16.0],
+                                                            egui::Label::new(
+                                                                RichText::new(format!("{} pt", format_thousands(score)))
+                                                                    .strong()
+                                                                    .size(11.5)
+                                                                    .color(theme.ok),
+                                                            ),
+                                                        );
+                                                    } else {
+                                                        ui.add_sized(
+                                                            [70.0, 16.0],
+                                                            egui::Label::new(
+                                                                RichText::new("--- pt")
+                                                                    .monospace()
+                                                                    .size(11.5)
+                                                                    .color(theme.offline),
+                                                            ),
+                                                        );
+                                                    }
+
+                                                    ui.add_space(8.0);
 
                                                     // |||||||| バー: 左に使用分(赤)、右に余剰分(緑)
                                                     if is_online {
@@ -737,6 +771,90 @@ mod tests {
 
         // 100% used on 8 bars -> 8 used, 0 surplus
         assert_eq!(calculate_resource_bar_counts(1.0, 8), (8, 0));
+    }
+
+    #[test]
+    fn test_bar_alignment_across_digits() {
+        let ctx = egui::Context::default();
+        let mut bar_x1 = 0.0;
+        let mut bar_x2 = 0.0;
+        let mut score_rect1 = egui::Rect::NOTHING;
+        let mut score_rect2 = egui::Rect::NOTHING;
+
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                // Row 1: GORONEPC (0 pt, 2 ms)
+                ui.horizontal(|ui| {
+                    ui.label("GORONEPC");
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        // 1. Ping
+                        let _ = ui.add_sized(
+                            [46.0, 16.0],
+                            egui::Label::new("2 ms"),
+                        );
+
+                        ui.add_space(6.0);
+
+                        // 2. Score
+                        let resp = ui.add_sized(
+                            [70.0, 16.0],
+                            egui::Label::new("0 pt"),
+                        );
+                        score_rect1 = resp.rect;
+
+                        ui.add_space(8.0);
+
+                        // 3. Bar
+                        let bar_resp = ui.scope(|ui| {
+                            show_resource_bar(ui, 0.1, 8, Color32::RED, Color32::GREEN);
+                        });
+                        bar_x1 = bar_resp.response.rect.min.x;
+                    });
+                });
+
+                // Row 2: WINSERVER (25,070 pt, 1 ms)
+                ui.horizontal(|ui| {
+                    ui.label("WINSERVER");
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        // 1. Ping
+                        let _ = ui.add_sized(
+                            [46.0, 16.0],
+                            egui::Label::new("1 ms"),
+                        );
+
+                        ui.add_space(6.0);
+
+                        // 2. Score
+                        let resp = ui.add_sized(
+                            [70.0, 16.0],
+                            egui::Label::new("25,070 pt"),
+                        );
+                        score_rect2 = resp.rect;
+
+                        ui.add_space(8.0);
+
+                        // 3. Bar
+                        let bar_resp = ui.scope(|ui| {
+                            show_resource_bar(ui, 0.1, 8, Color32::RED, Color32::GREEN);
+                        });
+                        bar_x2 = bar_resp.response.rect.min.x;
+                    });
+                });
+            });
+        });
+
+        println!("score_rect1: {:?}, score_rect2: {:?}", score_rect1, score_rect2);
+        println!("bar_x1 = {}, bar_x2 = {}", bar_x1, bar_x2);
+        assert_eq!(score_rect1.width(), 70.0);
+        assert_eq!(score_rect2.width(), 70.0);
+        assert_eq!(score_rect1.min.x, score_rect2.min.x);
+        assert_eq!(score_rect1.max.x, score_rect2.max.x);
+        assert!(
+            (bar_x1 - bar_x2).abs() < 0.1,
+            "Bars must align perfectly! x1={}, x2={}",
+            bar_x1,
+            bar_x2
+        );
     }
 
     #[test]
