@@ -36,3 +36,6 @@ desktop.ini
 .vscode/
 *.swp
 *.swo
+
+# Local templates / experimental starter kits (unreleased)
+templates/
