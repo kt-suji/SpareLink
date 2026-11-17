@@ -106,13 +106,20 @@ pub fn run_benchmark_details(logical_cores: u32) -> BenchmarkResult {
     }
 }
 
+/// 論理 CPU コア数を取得（取得失敗時は 4 コアを返す）
+pub fn logical_cpu_cores() -> u32 {
+    std::thread::available_parallelism()
+        .map(|n| n.get() as u32)
+        .unwrap_or(4)
+}
+
 /**
  * CPU性能ベンチマークを実行し、基準性能スコアを算出する。
  *
  * @param logical_cores 測定に使用する論理コア数（1以上の整数）
  * @return 性能スコア（4〜5桁スケール: 5,000〜50,000 pt）
  */
-#[allow(dead_code)]
+#[allow(dead_code)] // sparelink-agent バイナリで使用（sparelink-bench 側では run_benchmark_details のみ使用）
 pub fn run_quick_cpu_benchmark(logical_cores: u32) -> u32 {
     let res = run_benchmark_details(logical_cores);
     println!(

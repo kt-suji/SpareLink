@@ -46,10 +46,10 @@ impl SpareLinkMonitorApp {
 impl eframe::App for SpareLinkMonitorApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // 定期的にテレメトリホルダーから最新実測値を取得
-        if let Ok(lock) = self.telemetry_holder.try_read() {
-            if let Some(ref telem) = *lock {
-                self.cached_telemetry = Some(telem.clone());
-            }
+        if let Ok(lock) = self.telemetry_holder.try_read()
+            && let Some(ref telem) = *lock
+        {
+            self.cached_telemetry = Some(telem.clone());
         }
 
         let is_paused = self.sharing_paused.load(Ordering::SeqCst);

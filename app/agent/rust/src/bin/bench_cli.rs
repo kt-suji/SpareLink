@@ -40,26 +40,20 @@ fn main() {
             "-s" | "--score-only" | "-q" | "--quiet" => {
                 score_only = true;
             }
-            "-c" | "--cores" => {
-                if i + 1 < args.len() {
-                    if let Ok(c) = args[i + 1].parse::<u32>() {
-                        if c > 0 {
-                            custom_cores = Some(c);
-                        }
-                    }
-                    i += 1;
+            "-c" | "--cores" if i + 1 < args.len() => {
+                if let Ok(c) = args[i + 1].parse::<u32>()
+                    && c > 0
+                {
+                    custom_cores = Some(c);
                 }
+                i += 1;
             }
             _ => {}
         }
         i += 1;
     }
 
-    let detected_cores = custom_cores.unwrap_or_else(|| {
-        std::thread::available_parallelism()
-            .map(|n| n.get() as u32)
-            .unwrap_or(4)
-    });
+    let detected_cores = custom_cores.unwrap_or_else(bench::logical_cpu_cores);
 
     let res = bench::run_benchmark_details(detected_cores);
 

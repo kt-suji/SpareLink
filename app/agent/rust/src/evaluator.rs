@@ -23,7 +23,7 @@ pub fn calculate_ram_capacity_factor(cpu_cores: u32, memory_total_gb: f64) -> f6
 }
 
 /// Evaluates allocatable surplus computing resources based on hardware baseline and live telemetry.
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn evaluate_surplus_capacity(
     metrics: &ProbeMetrics,
     benchmark_score: Option<u32>,

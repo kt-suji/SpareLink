@@ -14,12 +14,88 @@ use crate::models::{LocalAgentTelemetryMessage, TailscaleTelemetry};
 use super::protocol::{P2PMessage, PeerNodeState};
 
 fn get_known_nodes_path() -> PathBuf {
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(parent) = exe_path.parent() {
-            return parent.join("sparelink_known_nodes.json");
-        }
+    if let Ok(exe_path) = std::env::current_exe()
+        && let Some(parent) = exe_path.parent()
+    {
+        return parent.join("sparelink_known_nodes.json");
     }
     PathBuf::from("sparelink_known_nodes.json")
+}
+
+/// 相手ピアのテレメトリ内 `peers` 配列から相互遅延 (RTT ms) マップを構築する
+fn build_peer_latencies(peer_list: Option<&Vec<PeerNodeState>>) -> Option<HashMap<String, u64>> {
+    let peers = peer_list?;
+    let mut lat_map = HashMap::new();
+    for p in peers {
+        if let Some(lat) = p.latency_ms {
+            lat_map.insert(p.id.clone(), lat);
+            lat_map.insert(p.name.to_lowercase(), lat);
+            if let Some(pos) = p.id.find(':') {
+                lat_map.insert(p.id[pos + 1..].to_string(), lat);
+            }
+        }
+    }
+    if lat_map.is_empty() { None } else { Some(lat_map) }
+}
+
+/// `upsert_peer_state` へ渡すピア更新ペイロード
+struct PeerUpsert {
+    key: String,
+    name: String,
+    address: String,
+    os: Option<String>,
+    transport: String,
+    telemetry: LocalAgentTelemetryMessage,
+    measured_latency_ms: Option<u64>,
+}
+
+/// 受信/計測したテレメトリでピア状態を新規登録または差分更新する
+fn upsert_peer_state(peers: &mut HashMap<String, PeerNodeState>, update: PeerUpsert) {
+    let PeerUpsert {
+        key,
+        name,
+        address,
+        os,
+        transport,
+        telemetry,
+        measured_latency_ms,
+    } = update;
+    let peer_latencies = build_peer_latencies(telemetry.peers.as_ref());
+    let entry = peers.entry(key.clone()).or_insert_with(|| PeerNodeState {
+        id: key,
+        name: name.clone(),
+        address,
+        os,
+        status: "online".to_string(),
+        latency_ms: None,
+        last_seen_secs_ago: Some(0),
+        cpu_cores: Some(telemetry.cpu_cores),
+        cpu_percent: Some(telemetry.cpu_percent),
+        memory_percent: Some(telemetry.memory_percent),
+        memory_total_gb: Some(telemetry.memory_total_gb),
+        memory_available_gb: Some(telemetry.memory_available_gb),
+        cpu_benchmark_score: telemetry.cpu_benchmark_score,
+        surplus: telemetry.surplus.clone(),
+        transport,
+        peer_latencies: None,
+    });
+
+    entry.status = "online".to_string();
+    entry.name = name;
+    if let Some(lat) = measured_latency_ms {
+        entry.latency_ms = Some(lat);
+    }
+    entry.last_seen_secs_ago = Some(0);
+    entry.cpu_cores = Some(telemetry.cpu_cores);
+    entry.memory_total_gb = Some(telemetry.memory_total_gb);
+    entry.cpu_benchmark_score = telemetry.cpu_benchmark_score;
+    entry.cpu_percent = Some(telemetry.cpu_percent);
+    entry.memory_percent = Some(telemetry.memory_percent);
+    entry.memory_available_gb = Some(telemetry.memory_available_gb);
+    entry.surplus = telemetry.surplus;
+    if let Some(lat_map) = peer_latencies {
+        entry.peer_latencies = Some(lat_map);
+    }
 }
 
 /// 受信したPingの送信元情報と既存ピアリストを照合し、同一ノードのキーを特定する
@@ -75,18 +151,18 @@ impl PeerManager {
     /// 過去に一度でもSpareLinkで疎通したことのある既知ノードを永続化ファイルから読み込む
     fn load_known_peers() -> HashMap<String, PeerNodeState> {
         let path = get_known_nodes_path();
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if let Ok(list) = serde_json::from_str::<Vec<PeerNodeState>>(&content) {
-                let mut map = HashMap::new();
-                for mut p in list {
-                    p.status = "offline".to_string();
-                    p.latency_ms = None;
-                    p.last_seen_secs_ago = Some(999);
-                    map.insert(p.id.clone(), p);
-                }
-                println!("[SpareLink P2P] Loaded {} previously verified SpareLink node(s) from {}", map.len(), path.display());
-                return map;
+        if let Ok(content) = std::fs::read_to_string(&path)
+            && let Ok(list) = serde_json::from_str::<Vec<PeerNodeState>>(&content)
+        {
+            let mut map = HashMap::new();
+            for mut p in list {
+                p.status = "offline".to_string();
+                p.latency_ms = None;
+                p.last_seen_secs_ago = Some(999);
+                map.insert(p.id.clone(), p);
             }
+            println!("[SpareLink P2P] Loaded {} previously verified SpareLink node(s) from {}", map.len(), path.display());
+            return map;
         }
         HashMap::new()
     }
@@ -182,52 +258,20 @@ impl PeerManager {
                     }
                 });
 
-            let entry = lock.entry(target_key.clone()).or_insert_with(|| PeerNodeState {
-                id: target_key.clone(),
-                name: sender_name.clone(),
-                address: sender_id.clone(),
-                os: Some(telemetry.os.clone()),
-                status: "online".to_string(),
-                latency_ms: None,
-                last_seen_secs_ago: Some(0),
-                cpu_cores: Some(telemetry.cpu_cores),
-                cpu_percent: Some(telemetry.cpu_percent),
-                memory_percent: Some(telemetry.memory_percent),
-                memory_total_gb: Some(telemetry.memory_total_gb),
-                memory_available_gb: Some(telemetry.memory_available_gb),
-                cpu_benchmark_score: telemetry.cpu_benchmark_score,
-                surplus: telemetry.surplus.clone(),
-                transport: self.discovery.transport_kind().to_string(),
-                peer_latencies: None,
-            });
-
-            entry.status = "online".to_string();
-            entry.name = sender_name.clone();
-            entry.last_seen_secs_ago = Some(0);
-            entry.cpu_cores = Some(telemetry.cpu_cores);
-            entry.memory_total_gb = Some(telemetry.memory_total_gb);
-            entry.cpu_benchmark_score = telemetry.cpu_benchmark_score;
-            entry.cpu_percent = Some(telemetry.cpu_percent);
-            entry.memory_percent = Some(telemetry.memory_percent);
-            entry.memory_available_gb = Some(telemetry.memory_available_gb);
-            entry.surplus = telemetry.surplus.clone();
-
-            if let Some(ref peer_list) = telemetry.peers {
-                let mut lat_map = HashMap::new();
-                for p in peer_list {
-                    if let Some(lat) = p.latency_ms {
-                        lat_map.insert(p.id.clone(), lat);
-                        lat_map.insert(p.name.to_lowercase(), lat);
-                        if let Some(pos) = p.id.find(':') {
-                            lat_map.insert(p.id[pos + 1..].to_string(), lat);
-                        }
-                    }
-                }
-                if !lat_map.is_empty() {
-                    entry.peer_latencies = Some(lat_map);
-                }
-            }
-            // 受信Pingだけでは往復遅延を測れないため、latency_ms は捏造せず probe_peer の実測値のみを使う
+            let os = Some(telemetry.os.clone());
+            // 受信Pingだけでは往復遅延を測れないため、latency_ms は None を渡し既存の実測値を上書きしない
+            upsert_peer_state(
+                &mut lock,
+                PeerUpsert {
+                    key: target_key,
+                    name: sender_name,
+                    address: sender_id,
+                    os,
+                    transport: self.discovery.transport_kind().to_string(),
+                    telemetry,
+                    measured_latency_ms: None,
+                },
+            );
 
             Self::save_known_peers_unlocked(&lock);
         }
@@ -377,54 +421,19 @@ impl PeerManager {
 
         match probe_result {
             Ok(Ok((telemetry, latency_opt))) => {
-                // P2P疎通成功！ 相手の最新実測値と実測Ping遅延(ms)を反映（未登録なら新規追加）
-                let entry = lock.entry(target_key.clone()).or_insert_with(|| PeerNodeState {
-                    id: target_key.clone(),
-                    name: peer.name.clone(),
-                    address: peer.ip.clone(),
-                    os: peer.os.clone(),
-                    status: "online".to_string(),
-                    latency_ms: None,
-                    last_seen_secs_ago: Some(0),
-                    cpu_cores: Some(telemetry.cpu_cores),
-                    cpu_percent: Some(telemetry.cpu_percent),
-                    memory_percent: Some(telemetry.memory_percent),
-                    memory_total_gb: Some(telemetry.memory_total_gb),
-                    memory_available_gb: Some(telemetry.memory_available_gb),
-                    cpu_benchmark_score: telemetry.cpu_benchmark_score,
-                    surplus: telemetry.surplus.clone(),
-                    transport: peer.transport.to_string(),
-                    peer_latencies: None,
-                });
-
-                entry.status = "online".to_string();
-                if let Some(lat) = latency_opt {
-                    entry.latency_ms = Some(lat);
-                }
-                entry.last_seen_secs_ago = Some(0);
-                entry.cpu_cores = Some(telemetry.cpu_cores);
-                entry.cpu_percent = Some(telemetry.cpu_percent);
-                entry.memory_percent = Some(telemetry.memory_percent);
-                entry.memory_total_gb = Some(telemetry.memory_total_gb);
-                entry.memory_available_gb = Some(telemetry.memory_available_gb);
-                entry.cpu_benchmark_score = telemetry.cpu_benchmark_score;
-                entry.surplus = telemetry.surplus;
-
-                if let Some(ref peer_list) = telemetry.peers {
-                    let mut lat_map = HashMap::new();
-                    for p in peer_list {
-                        if let Some(lat) = p.latency_ms {
-                            lat_map.insert(p.id.clone(), lat);
-                            lat_map.insert(p.name.to_lowercase(), lat);
-                            if let Some(pos) = p.id.find(':') {
-                                lat_map.insert(p.id[pos + 1..].to_string(), lat);
-                            }
-                        }
-                    }
-                    if !lat_map.is_empty() {
-                        entry.peer_latencies = Some(lat_map);
-                    }
-                }
+                // P2P疎通成功！ 相手の最新実測値と実測Ping遅延(ms)を反映
+                upsert_peer_state(
+                    &mut lock,
+                    PeerUpsert {
+                        key: target_key,
+                        name: peer.name.clone(),
+                        address: peer.ip.clone(),
+                        os: peer.os.clone(),
+                        transport: peer.transport.to_string(),
+                        telemetry,
+                        measured_latency_ms: latency_opt,
+                    },
+                );
 
                 // 過去に一度でも疎通したPCとしてファイル保存
                 Self::save_known_peers_unlocked(&lock);

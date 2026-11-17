@@ -36,10 +36,10 @@ pub fn open_browser(url: &str) {
 /// TailscaleバイナリをPATHおよび各OSの標準インストールディレクトリから探索する
 pub fn find_tailscale_binary() -> Option<PathBuf> {
     // 1. 環境変数PATHの確認
-    if let Ok(output) = std::process::Command::new("tailscale").arg("version").output() {
-        if output.status.success() {
-            return Some(PathBuf::from("tailscale"));
-        }
+    if let Ok(output) = std::process::Command::new("tailscale").arg("version").output()
+        && output.status.success()
+    {
+        return Some(PathBuf::from("tailscale"));
     }
 
     // 2. Windows標準インストールパス

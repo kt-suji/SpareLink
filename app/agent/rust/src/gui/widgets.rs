@@ -31,7 +31,7 @@ pub fn format_thousands(n: u32) -> String {
     let mut result = String::new();
     let len = s.len();
     for (i, c) in s.chars().enumerate() {
-        if i > 0 && (len - i) % 3 == 0 {
+        if i > 0 && (len - i).is_multiple_of(3) {
             result.push(',');
         }
         result.push(c);
@@ -123,63 +123,6 @@ pub fn show_resource_bar(
                     .color(surplus_color)
                     .monospace()
                     .strong()
-                    .size(13.0),
-            );
-        }
-    }
-
-    ui.spacing_mut().item_spacing = old_spacing;
-}
-
-/// |||||||| 方式の単一リソースバーを描画 (点灯セグメント + 未点灯セグメント)
-#[allow(dead_code)]
-pub fn show_segmented_bar(
-    ui: &mut egui::Ui,
-    ratio: f32,
-    total_bars: usize,
-    bar_color: Color32,
-    empty_color: Color32,
-) {
-    let filled = ((ratio.clamp(0.0, 1.0) * total_bars as f32).round() as usize).min(total_bars);
-    let empty = total_bars.saturating_sub(filled);
-
-    let old_spacing = ui.spacing().item_spacing;
-    ui.spacing_mut().item_spacing.x = 0.0;
-
-    let is_rtl = ui.layout().prefer_right_to_left();
-    if is_rtl {
-        if empty > 0 {
-            ui.label(
-                RichText::new("|".repeat(empty))
-                    .color(empty_color)
-                    .monospace()
-                    .size(13.0),
-            );
-        }
-        if filled > 0 {
-            ui.label(
-                RichText::new("|".repeat(filled))
-                    .color(bar_color)
-                    .monospace()
-                    .strong()
-                    .size(13.0),
-            );
-        }
-    } else {
-        if filled > 0 {
-            ui.label(
-                RichText::new("|".repeat(filled))
-                    .color(bar_color)
-                    .monospace()
-                    .strong()
-                    .size(13.0),
-            );
-        }
-        if empty > 0 {
-            ui.label(
-                RichText::new("|".repeat(empty))
-                    .color(empty_color)
-                    .monospace()
                     .size(13.0),
             );
         }

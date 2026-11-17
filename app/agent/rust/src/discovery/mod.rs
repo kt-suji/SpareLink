@@ -49,7 +49,6 @@ pub struct DiscoveredPeer {
 
 impl DiscoveredPeer {
     /// 接続用のアドレス文字列 ("IP:Port") を生成する
-    #[allow(dead_code)]
     pub fn socket_address(&self) -> String {
         format!("{}:{}", self.ip, self.port)
     }

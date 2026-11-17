@@ -23,7 +23,7 @@ struct FileTime {
 }
 
 impl FileTime {
-    fn to_u64(&self) -> u64 {
+    fn to_u64(self) -> u64 {
         ((self.dwHighDateTime as u64) << 32) | (self.dwLowDateTime as u64)
     }
 }
@@ -113,9 +113,7 @@ impl NativeWindowsProbe {
         };
 
         let pc_name = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Windows-PC".to_string());
-        let cpu_cores = std::thread::available_parallelism()
-            .map(|n| n.get() as u32)
-            .unwrap_or(4);
+        let cpu_cores = crate::bench::logical_cpu_cores();
 
         ProbeMetrics {
             pc_name,

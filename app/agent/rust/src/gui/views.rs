@@ -68,8 +68,12 @@ pub fn render_titlebar(app: &mut SpareLinkMonitorApp, ui: &mut egui::Ui, ctx: &e
 
                     // 🌐 Webダッシュボード・設定を開くクイックボタン
                     let web_title_btn = egui::Button::new(RichText::new("🌐").size(12.0).color(theme.text_main)).frame(false);
-                    if ui.add(web_title_btn).on_hover_text("ブラウザでWebダッシュボード・設定を開く (http://localhost:5180)").clicked() {
-                        open_browser("http://localhost:5180");
+                    if ui
+                        .add(web_title_btn)
+                        .on_hover_text(format!("ブラウザでWebダッシュボード・設定を開く ({})", crate::config::dashboard_url()))
+                        .clicked()
+                    {
+                        open_browser(&crate::config::dashboard_url());
                     }
 
                     // ☀ / 🌙 ダーク・ライトモード切替
@@ -157,52 +161,52 @@ pub fn render_tailscale_card(
     telem: Option<&LocalAgentTelemetryMessage>,
     theme: ThemeColors,
 ) {
-    if let Some(telem) = telem {
-        if let Some(ref ts) = telem.tailscale {
-            egui::Frame::none()
-                .fill(theme.card_bg)
-                .rounding(Rounding::same(4.0))
-                .stroke(Stroke::new(1.0_f32, theme.card_border))
-                .inner_margin(6.0)
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        match ts.state {
-                            TailscaleState::Running => {
-                                ui.label(RichText::new("●").color(theme.ok).size(9.0));
-                                ui.add_space(4.0);
-                                ui.label(RichText::new("Tailscale:").size(11.0).color(theme.text_muted));
-                                ui.add_space(4.0);
-                                ui.label(RichText::new(format!("接続中 ({})", ts.self_ip.as_deref().unwrap_or("100.x"))).size(11.5).strong().color(theme.text_main));
-                            }
-                            TailscaleState::NeedsLogin => {
-                                ui.label(RichText::new("▲").color(theme.warn).size(9.0));
-                                ui.add_space(4.0);
-                                ui.label(RichText::new("Tailscale: ログイン必要").color(theme.warn).size(11.0));
-                                ui.add_space(6.0);
-                                if let Some(ref url) = ts.auth_url {
-                                    if ui.small_button("認証を開く ↗").clicked() {
-                                        open_browser(url);
-                                    }
-                                }
-                            }
-                            TailscaleState::NotInstalled => {
-                                ui.label(RichText::new("✕").color(theme.accent).size(9.0));
-                                ui.add_space(4.0);
-                                ui.label(RichText::new("Tailscale: 未インストール").color(theme.accent).size(11.0));
-                                ui.add_space(6.0);
-                                if ui.small_button("公式DL ↗").clicked() {
-                                    open_browser("https://tailscale.com/download");
-                                }
-                            }
-                            _ => {
-                                ui.label(RichText::new("○").color(theme.offline).size(9.0));
-                                ui.add_space(4.0);
-                                ui.label(RichText::new("Tailscale: 停止中").size(11.0).color(theme.offline));
+    if let Some(telem) = telem
+        && let Some(ref ts) = telem.tailscale
+    {
+        egui::Frame::none()
+            .fill(theme.card_bg)
+            .rounding(Rounding::same(4.0))
+            .stroke(Stroke::new(1.0_f32, theme.card_border))
+            .inner_margin(6.0)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    match ts.state {
+                        TailscaleState::Running => {
+                            ui.label(RichText::new("●").color(theme.ok).size(9.0));
+                            ui.add_space(4.0);
+                            ui.label(RichText::new("Tailscale:").size(11.0).color(theme.text_muted));
+                            ui.add_space(4.0);
+                            ui.label(RichText::new(format!("接続中 ({})", ts.self_ip.as_deref().unwrap_or("100.x"))).size(11.5).strong().color(theme.text_main));
+                        }
+                        TailscaleState::NeedsLogin => {
+                            ui.label(RichText::new("▲").color(theme.warn).size(9.0));
+                            ui.add_space(4.0);
+                            ui.label(RichText::new("Tailscale: ログイン必要").color(theme.warn).size(11.0));
+                            ui.add_space(6.0);
+                            if let Some(ref url) = ts.auth_url
+                                && ui.small_button("認証を開く ↗").clicked()
+                            {
+                                open_browser(url);
                             }
                         }
-                    });
+                        TailscaleState::NotInstalled => {
+                            ui.label(RichText::new("✕").color(theme.accent).size(9.0));
+                            ui.add_space(4.0);
+                            ui.label(RichText::new("Tailscale: 未インストール").color(theme.accent).size(11.0));
+                            ui.add_space(6.0);
+                            if ui.small_button("公式DL ↗").clicked() {
+                                open_browser("https://tailscale.com/download");
+                            }
+                        }
+                        _ => {
+                            ui.label(RichText::new("○").color(theme.offline).size(9.0));
+                            ui.add_space(4.0);
+                            ui.label(RichText::new("Tailscale: 停止中").size(11.0).color(theme.offline));
+                        }
+                    }
                 });
-        }
+            });
     }
 }
 
@@ -353,8 +357,12 @@ pub fn render_action_bar(
 
         // ブラウザ詳細画面・設定を開くボタン
         let web_btn = egui::Button::new(RichText::new("🌐 Web設定・詳細 ↗").color(theme.text_main).strong());
-        if ui.add(web_btn).on_hover_text("ブラウザで詳細設定画面（http://localhost:5180）を開きます").clicked() {
-            open_browser("http://localhost:5180");
+        if ui
+            .add(web_btn)
+            .on_hover_text(format!("ブラウザで詳細設定画面（{}）を開きます", crate::config::dashboard_url()))
+            .clicked()
+        {
+            open_browser(&crate::config::dashboard_url());
         }
 
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {

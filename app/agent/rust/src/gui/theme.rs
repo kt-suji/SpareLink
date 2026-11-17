@@ -16,8 +16,6 @@ pub struct ThemeColors {
     pub warn: Color32,
     pub offline: Color32,
     pub ping: Color32,
-    #[allow(dead_code)]
-    pub meter_base: Color32,
     pub used_bar: Color32,
     pub unlit_bar: Color32,
     pub window_border: Color32,
@@ -39,7 +37,6 @@ impl ThemeColors {
             warn: Color32::from_rgb(234, 179, 8),             // #eab308 (アンバー警告)
             offline: Color32::from_rgb(107, 114, 128),        // #6b7280 (オフライン灰)
             ping: Color32::from_rgb(56, 189, 248),            // #38bdf8 (高視認性スカイブルー)
-            meter_base: Color32::from_rgb(148, 163, 184),     // #94a3b8
             used_bar: Color32::from_rgb(240, 100, 79),        // #f0644f (使用中: コーラルレッド)
             unlit_bar: Color32::from_rgb(45, 55, 72),         // #2d3748 (未点灯バー)
             window_border: Color32::from_rgb(51, 65, 85),     // #334155 (外枠線)
@@ -61,7 +58,6 @@ impl ThemeColors {
             warn: Color32::from_rgb(202, 138, 4),             // #ca8a04
             offline: Color32::from_rgb(148, 163, 184),        // #94a3b8
             ping: Color32::from_rgb(2, 132, 199),             // #0284c7 (高コントラスト青)
-            meter_base: Color32::from_rgb(100, 116, 139),     // #64748b
             used_bar: Color32::from_rgb(225, 29, 72),         // #e11d48 (使用中: クリムゾンレッド)
             unlit_bar: Color32::from_rgb(226, 232, 240),      // #e2e8f0 (未点灯バー)
             window_border: Color32::from_rgb(148, 163, 184),  // #94a3b8 (外枠線)

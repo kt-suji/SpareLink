@@ -9,111 +9,93 @@ mod native_probe;
 mod p2p;
 mod updater;
 mod web_server;
+mod ws_server;
 
-use std::path::PathBuf;
-use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures_util::{SinkExt, StreamExt};
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
 use tokio::sync::{broadcast, RwLock};
-use tokio_tungstenite::tungstenite::Message;
 
 use config::{AppConfig, EvaluatorSettings};
 use discovery::{DiscoveryConfig, TransportKind};
 use job_runner::JobRunner;
 use models::{LocalAgentTelemetryMessage, ProbeMetrics};
-use p2p::{P2PMessage, PeerManager};
+use p2p::PeerManager;
 
-fn find_python_path() -> PathBuf {
-    let candidates = [
-        PathBuf::from("../../.venv/Scripts/python.exe"),
-        PathBuf::from("../../../.venv/Scripts/python.exe"),
-        PathBuf::from(".venv/Scripts/python.exe"),
-    ];
-
-    for candidate in &candidates {
-        if candidate.exists() {
-            return candidate.clone();
-        }
-    }
-
-    PathBuf::from("python")
+#[derive(Clone)]
+struct TelemetryHub {
+    benchmark_score: u32,
+    config: Arc<RwLock<AppConfig>>,
+    peer_manager: Arc<PeerManager>,
+    local_telemetry: Arc<RwLock<Option<LocalAgentTelemetryMessage>>>,
+    latest_metrics: Arc<RwLock<Option<String>>>,
+    tx: broadcast::Sender<String>,
+    sharing_paused: Arc<AtomicBool>,
 }
 
-async fn process_and_broadcast(
-    metrics: ProbeMetrics,
-    benchmark_score: u32,
-    evaluator_cfg: &EvaluatorSettings,
-    peer_manager: &Arc<PeerManager>,
-    local_telemetry_holder: &Arc<RwLock<Option<LocalAgentTelemetryMessage>>>,
-    latest_metrics: &Arc<RwLock<Option<String>>>,
-    tx: &broadcast::Sender<String>,
-    sharing_paused: &Arc<AtomicBool>,
-) {
-    let ram_factor = evaluator::calculate_ram_capacity_factor(metrics.cpu_cores, metrics.memory_total_gb);
-    let composite_benchmark_score = (benchmark_score as f64 * ram_factor).round() as u32;
+impl TelemetryHub {
+    async fn process_and_broadcast(
+        &self,
+        metrics: ProbeMetrics,
+        evaluator_cfg: &EvaluatorSettings,
+    ) {
+        let ram_factor =
+            evaluator::calculate_ram_capacity_factor(metrics.cpu_cores, metrics.memory_total_gb);
+        let composite_benchmark_score = (self.benchmark_score as f64 * ram_factor).round() as u32;
 
-    let mut surplus = evaluator::evaluate_surplus_capacity_with_config(
-        &metrics,
-        Some(benchmark_score),
-        evaluator_cfg,
-    );
+        let mut surplus = evaluator::evaluate_surplus_capacity_with_config(
+            &metrics,
+            Some(self.benchmark_score),
+            evaluator_cfg,
+        );
 
-    let is_paused = sharing_paused.load(Ordering::SeqCst);
-    if is_paused {
-        surplus.allocatable_cpu_score = Some(0);
-        surplus.allocatable_memory_gb = Some(0.0);
-        surplus.status_note = "Paused by user (一時停止中)".to_string();
-    }
-
-    let known_peers = peer_manager.get_all_peers().await;
-    let tailscale = peer_manager.get_tailscale_status().await;
-    let ram_per_core = metrics.memory_total_gb / (metrics.cpu_cores as f64).max(1.0);
-
-    println!(
-        "[{}] CPU: {:>4.1}% | MEM: {:>4.1}% ({:.1}/{:.1}GB) | Score: {} pt ({:.2}x, {:.1}GB/c) | Surplus: {:>5} pt{} | Peers: {} online",
-        metrics.pc_name,
-        metrics.cpu_percent,
-        metrics.memory_percent,
-        (metrics.memory_total_gb - metrics.memory_available_gb).max(0.0),
-        metrics.memory_total_gb,
-        composite_benchmark_score,
-        ram_factor,
-        ram_per_core,
-        surplus.allocatable_cpu_score.unwrap_or(0),
-        if is_paused { " [PAUSED]" } else { "" },
-        known_peers.iter().filter(|p| p.status == "online").count(),
-    );
-
-    let telemetry = LocalAgentTelemetryMessage {
-        pc_name: metrics.pc_name,
-        os: metrics.os,
-        cpu_cores: metrics.cpu_cores,
-        cpu_percent: metrics.cpu_percent,
-        memory_percent: metrics.memory_percent,
-        memory_total_gb: metrics.memory_total_gb,
-        memory_available_gb: metrics.memory_available_gb,
-        cpu_benchmark_score: Some(composite_benchmark_score),
-        surplus,
-        peers: Some(known_peers),
-        tailscale,
-    };
-
-    {
-        let mut t_lock = local_telemetry_holder.write().await;
-        *t_lock = Some(telemetry.clone());
-    }
-
-    if let Ok(telemetry_json) = serde_json::to_string(&telemetry) {
-        {
-            let mut lock = latest_metrics.write().await;
-            *lock = Some(telemetry_json.clone());
+        let is_paused = self.sharing_paused.load(Ordering::SeqCst);
+        if is_paused {
+            surplus.allocatable_cpu_score = Some(0);
+            surplus.allocatable_memory_gb = Some(0.0);
+            surplus.status_note = "Paused by user (一時停止中)".to_string();
         }
-        let _ = tx.send(telemetry_json);
+
+        let known_peers = self.peer_manager.get_all_peers().await;
+        let tailscale = self.peer_manager.get_tailscale_status().await;
+        let ram_per_core = metrics.memory_total_gb / (metrics.cpu_cores as f64).max(1.0);
+
+        println!(
+            "[{}] CPU: {:>4.1}% | MEM: {:>4.1}% ({:.1}/{:.1}GB) | Score: {} pt ({:.2}x, {:.1}GB/c) | Surplus: {:>5} pt{} | Peers: {} online",
+            metrics.pc_name,
+            metrics.cpu_percent,
+            metrics.memory_percent,
+            (metrics.memory_total_gb - metrics.memory_available_gb).max(0.0),
+            metrics.memory_total_gb,
+            composite_benchmark_score,
+            ram_factor,
+            ram_per_core,
+            surplus.allocatable_cpu_score.unwrap_or(0),
+            if is_paused { " [PAUSED]" } else { "" },
+            known_peers.iter().filter(|p| p.status == "online").count(),
+        );
+
+        let telemetry = LocalAgentTelemetryMessage {
+            pc_name: metrics.pc_name,
+            os: metrics.os,
+            cpu_cores: metrics.cpu_cores,
+            cpu_percent: metrics.cpu_percent,
+            memory_percent: metrics.memory_percent,
+            memory_total_gb: metrics.memory_total_gb,
+            memory_available_gb: metrics.memory_available_gb,
+            cpu_benchmark_score: Some(composite_benchmark_score),
+            surplus,
+            peers: Some(known_peers),
+            tailscale,
+        };
+
+        *self.local_telemetry.write().await = Some(telemetry.clone());
+
+        if let Ok(telemetry_json) = serde_json::to_string(&telemetry) {
+            *self.latest_metrics.write().await = Some(telemetry_json.clone());
+            let _ = self.tx.send(telemetry_json);
+        }
     }
 }
 
@@ -124,28 +106,24 @@ async fn run_agent_backend(
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("[SpareLink] Initializing agent backend daemon...");
 
-    let initial_config = {
-        let lock = config.read().await;
-        lock.clone()
-    };
+    let initial_config = config.read().await.clone();
 
     // 1. Benchmark evaluation
     let benchmark_score = if initial_config.benchmark.manual_score > 0 {
-        println!("[SpareLink] Manual benchmark override: {} pt", initial_config.benchmark.manual_score);
+        println!(
+            "[SpareLink] Manual benchmark override: {} pt",
+            initial_config.benchmark.manual_score
+        );
         initial_config.benchmark.manual_score
     } else if initial_config.benchmark.enabled {
-        let detected_cores = std::thread::available_parallelism()
-            .map(|n| n.get() as u32)
-            .unwrap_or(4);
+        let detected_cores = bench::logical_cpu_cores();
         println!(
             "[SpareLink] Running benchmark across {} logical cores...",
             detected_cores
         );
-        tokio::task::spawn_blocking(move || {
-            bench::run_quick_cpu_benchmark(detected_cores)
-        })
-        .await
-        .unwrap_or(10_000)
+        tokio::task::spawn_blocking(move || bench::run_quick_cpu_benchmark(detected_cores))
+            .await
+            .unwrap_or(10_000)
     } else {
         10_000
     };
@@ -192,7 +170,11 @@ async fn run_agent_backend(
     let my_pc_name = initial_config.agent.node_name.clone();
     let job_runner = Arc::new(JobRunner::new(
         local_id.clone(),
-        if my_pc_name.is_empty() { local_id.clone() } else { my_pc_name },
+        if my_pc_name.is_empty() {
+            local_id
+        } else {
+            my_pc_name
+        },
         peer_manager.clone(),
         config.clone(),
         local_telemetry_holder.clone(),
@@ -231,76 +213,17 @@ async fn run_agent_backend(
     let latest_metrics = Arc::new(RwLock::new(None::<String>));
     let (tx, _rx) = broadcast::channel::<String>(32);
 
-    let python_path = find_python_path();
-    let script_path = PathBuf::from("../python/main.py");
-    let has_python_script = script_path.exists();
-
-    let tx_probe = tx.clone();
-    let latest_metrics_probe = latest_metrics.clone();
-    let peer_manager_probe = peer_manager.clone();
-    let local_telemetry_probe = local_telemetry_holder.clone();
-    let pause_probe = sharing_paused.clone();
-
     // 3. Metrics collection probe spawn
-    if has_python_script {
-        let config_py = config.clone();
-        let pause_py = pause_probe.clone();
-        match Command::new(&python_path)
-            .arg(&script_path)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-        {
-            Ok(mut child) => {
-                if let Some(stdout) = child.stdout.take() {
-                    tokio::spawn(async move {
-                        let mut reader = BufReader::new(stdout).lines();
-                        while let Ok(Some(line)) = reader.next_line().await {
-                            if let Ok(metrics) = serde_json::from_str::<ProbeMetrics>(&line) {
-                                let evaluator_cfg = {
-                                    let lock = config_py.read().await;
-                                    lock.evaluator.clone()
-                                };
-                                process_and_broadcast(
-                                    metrics,
-                                    benchmark_score,
-                                    &evaluator_cfg,
-                                    &peer_manager_probe,
-                                    &local_telemetry_probe,
-                                    &latest_metrics_probe,
-                                    &tx_probe,
-                                    &pause_py,
-                                )
-                                .await;
-                            }
-                        }
-                    });
-                }
-            }
-            Err(e) => {
-                eprintln!("[SpareLink] Python probe launch error ({}). Falling back to Windows native probe.", e);
-                spawn_native_probe_task(
-                    benchmark_score,
-                    config.clone(),
-                    peer_manager_probe,
-                    local_telemetry_probe,
-                    latest_metrics_probe,
-                    tx_probe,
-                    pause_probe,
-                );
-            }
-        }
-    } else {
-        spawn_native_probe_task(
-            benchmark_score,
-            config.clone(),
-            peer_manager_probe,
-            local_telemetry_probe,
-            latest_metrics_probe,
-            tx_probe,
-            pause_probe,
-        );
-    }
+    let hub = TelemetryHub {
+        benchmark_score,
+        config: config.clone(),
+        peer_manager: peer_manager.clone(),
+        local_telemetry: local_telemetry_holder,
+        latest_metrics: latest_metrics.clone(),
+        tx: tx.clone(),
+        sharing_paused,
+    };
+    spawn_metrics_probe(hub);
 
     // 4. WebSocket & P2P server listener
     let ws_addr = format!("{}:{}", initial_config.agent.host, initial_config.agent.port);
@@ -312,116 +235,84 @@ async fn run_agent_backend(
     let job_runner_for_web = job_runner.clone();
     let peer_manager_for_web = peer_manager.clone();
     tokio::spawn(async move {
-        web_server::run_dashboard_server(5180, config_for_web, job_runner_for_web, peer_manager_for_web).await;
+        web_server::run_dashboard_server(
+            config::DASHBOARD_PORT,
+            config_for_web,
+            job_runner_for_web,
+            peer_manager_for_web,
+        )
+        .await;
     });
 
-    while let Ok((stream, peer_addr)) = listener.accept().await {
-        let _ = stream.set_nodelay(true);
-        let mut rx = tx.subscribe();
-        let latest_metrics = latest_metrics.clone();
-        let peer_manager_ws = peer_manager.clone();
-        let job_runner_ws = job_runner.clone();
-
-        tokio::spawn(async move {
-            match tokio_tungstenite::accept_async(stream).await {
-                Ok(mut ws_stream) => {
-                    {
-                        let lock = latest_metrics.read().await;
-                        if let Some(ref json) = *lock {
-                            let _ = ws_stream.send(Message::Text(json.clone().into())).await;
-                        }
-                    }
-
-                    loop {
-                        tokio::select! {
-                            msg_opt = ws_stream.next() => {
-                                match msg_opt {
-                                    Some(Ok(Message::Text(text))) => {
-                                        if let Ok(p2p_msg) = serde_json::from_str::<P2PMessage>(&text) {
-                                            match p2p_msg {
-                                                P2PMessage::Ping { sender_id, sender_name, telemetry, .. } => {
-                                                    if let Some(pong) = peer_manager_ws.handle_incoming_ping(sender_id, sender_name, telemetry).await {
-                                                        if let Ok(pong_json) = serde_json::to_string(&pong) {
-                                                            let _ = ws_stream.send(Message::Text(pong_json.into())).await;
-                                                        }
-                                                    }
-                                                }
-                                                P2PMessage::JobSubmit { job } => {
-                                                    job_runner_ws.handle_remote_job_submit(job).await;
-                                                }
-                                                P2PMessage::JobUpdate { job } => {
-                                                    job_runner_ws.update_job(job).await;
-                                                }
-                                                P2PMessage::NodeUpdate { target_version, download_url } => {
-                                                    println!("[SpareLink] 受信: 自動アップデート要求 (バージョン: {:?})", target_version);
-                                                    tokio::spawn(async move {
-                                                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                                                        if let Err(e) = updater::perform_self_update(download_url.as_deref()).await {
-                                                            eprintln!("[SpareLink Update] 自動アップデート失敗: {}", e);
-                                                        }
-                                                    });
-                                                }
-                                                _ => {}
-                                            }
-                                        }
-                                    }
-                                    Some(Ok(Message::Close(_))) | None => break,
-                                    _ => {}
-                                }
-                            }
-                            telemetry_res = rx.recv() => {
-                                match telemetry_res {
-                                    Ok(json) => {
-                                        if ws_stream.send(Message::Text(json.into())).await.is_err() {
-                                            break;
-                                        }
-                                    }
-                                    Err(_) => break,
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!("[SpareLink] WebSocket handshake error from {}: {}", peer_addr, e);
-                }
-            }
-        });
-    }
-
+    ws_server::serve(listener, peer_manager, job_runner, latest_metrics, tx).await;
     Ok(())
 }
 
-fn spawn_native_probe_task(
-    benchmark_score: u32,
-    config: Arc<RwLock<AppConfig>>,
-    peer_manager: Arc<PeerManager>,
-    local_telemetry_holder: Arc<RwLock<Option<LocalAgentTelemetryMessage>>>,
-    latest_metrics: Arc<RwLock<Option<String>>>,
-    tx: broadcast::Sender<String>,
-    sharing_paused: Arc<AtomicBool>,
-) {
+#[cfg(target_os = "windows")]
+fn spawn_metrics_probe(hub: TelemetryHub) {
+    spawn_native_probe_task(hub);
+}
+
+#[cfg(not(target_os = "windows"))]
+fn spawn_metrics_probe(hub: TelemetryHub) {
+    use std::path::PathBuf;
+    use std::process::Stdio;
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::process::Command;
+
+    let script_path = PathBuf::from("../python/main.py");
+    if !script_path.exists() {
+        spawn_native_probe_task(hub);
+        return;
+    }
+
+    let python_path = [
+        PathBuf::from("../../.venv/bin/python"),
+        PathBuf::from("../../../.venv/bin/python"),
+        PathBuf::from(".venv/bin/python"),
+    ]
+    .into_iter()
+    .find(|p| p.exists())
+    .unwrap_or_else(|| PathBuf::from("python3"));
+
+    match Command::new(&python_path)
+        .arg(&script_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+    {
+        Ok(mut child) => {
+            if let Some(stdout) = child.stdout.take() {
+                tokio::spawn(async move {
+                    let mut reader = BufReader::new(stdout).lines();
+                    while let Ok(Some(line)) = reader.next_line().await {
+                        if let Ok(metrics) = serde_json::from_str::<ProbeMetrics>(&line) {
+                            let evaluator_cfg = hub.config.read().await.evaluator.clone();
+                            hub.process_and_broadcast(metrics, &evaluator_cfg).await;
+                        }
+                    }
+                });
+            }
+        }
+        Err(e) => {
+            eprintln!("[SpareLink] Python probe launch error ({}). Falling back to native probe.", e);
+            spawn_native_probe_task(hub);
+        }
+    }
+}
+
+fn spawn_native_probe_task(hub: TelemetryHub) {
     tokio::spawn(async move {
         let mut probe = native_probe::NativeWindowsProbe::new();
         loop {
             let (evaluator_cfg, broadcast_interval_ms) = {
-                let lock = config.read().await;
+                let lock = hub.config.read().await;
                 (lock.evaluator.clone(), lock.agent.broadcast_interval_ms)
             };
             let interval = Duration::from_millis(broadcast_interval_ms.max(500));
             tokio::time::sleep(interval).await;
             let metrics = probe.collect_metrics();
-            process_and_broadcast(
-                metrics,
-                benchmark_score,
-                &evaluator_cfg,
-                &peer_manager,
-                &local_telemetry_holder,
-                &latest_metrics,
-                &tx,
-                &sharing_paused,
-            )
-            .await;
+            hub.process_and_broadcast(metrics, &evaluator_cfg).await;
         }
     });
 }
@@ -433,8 +324,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let config = Arc::new(RwLock::new(AppConfig::load()));
-    let args: Vec<String> = std::env::args().collect();
-    let headless = args.iter().any(|a| a == "--headless" || a == "--no-gui");
+    let headless = std::env::args().any(|a| a == "--headless" || a == "--no-gui");
 
     let sharing_paused = Arc::new(AtomicBool::new(false));
     let local_telemetry_holder = Arc::new(RwLock::new(None::<LocalAgentTelemetryMessage>));

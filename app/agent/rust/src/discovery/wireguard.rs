@@ -104,26 +104,26 @@ impl PeerDiscoveryProvider for WireguardDiscoveryProvider {
             }
 
             // 2. 設定ファイルが存在すれば読み込み
-            if let Some(ref path) = self.config_path {
-                if path.exists() {
-                    let content = std::fs::read_to_string(path)?;
-                    let list: Vec<WireguardPeerConfig> = serde_json::from_str(&content)?;
+            if let Some(ref path) = self.config_path
+                && path.exists()
+            {
+                let content = std::fs::read_to_string(path)?;
+                let list: Vec<WireguardPeerConfig> = serde_json::from_str(&content)?;
 
-                    let peers = list
-                        .into_iter()
-                        .map(|c| DiscoveredPeer {
-                            id: format!("wireguard:{}", c.name.to_lowercase()),
-                            name: c.name,
-                            ip: c.ip,
-                            port: c.port.unwrap_or(self.default_p2p_port),
-                            os: c.os,
-                            transport: TransportKind::Wireguard,
-                            is_online: true,
-                        })
-                        .collect();
+                let peers = list
+                    .into_iter()
+                    .map(|c| DiscoveredPeer {
+                        id: format!("wireguard:{}", c.name.to_lowercase()),
+                        name: c.name,
+                        ip: c.ip,
+                        port: c.port.unwrap_or(self.default_p2p_port),
+                        os: c.os,
+                        transport: TransportKind::Wireguard,
+                        is_online: true,
+                    })
+                    .collect();
 
-                    return Ok(peers);
-                }
+                return Ok(peers);
             }
 
             // 3. 設定がない場合は空のリストを返却（エラーで異常終了はさせない）
