@@ -98,6 +98,11 @@ pub fn dist_binary_candidates(include_current_exe: bool) -> Vec<PathBuf> {
     {
         paths.push(cur);
     }
+    if let Ok(custom) = std::env::var("SPARELINK_DIST_PATH")
+        && !custom.trim().is_empty()
+    {
+        paths.push(PathBuf::from(custom));
+    }
     paths.extend([
         PathBuf::from("dist-agent\\sparelink-agent.exe"),
         PathBuf::from("..\\dist-agent\\sparelink-agent.exe"),
@@ -105,6 +110,11 @@ pub fn dist_binary_candidates(include_current_exe: bool) -> Vec<PathBuf> {
         PathBuf::from("G:\\My Drive\\SpareLink\\dist-agent\\sparelink-agent.exe"),
     ]);
     paths
+}
+
+fn is_safe_download_url(url: &str) -> bool {
+    (url.starts_with("http://") || url.starts_with("https://"))
+        && !url.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
 /// 自エージェントのバイナリを最新版に更新し、再起動する
@@ -120,22 +130,27 @@ pub async fn perform_self_update(
     // 1. 最新バイナリの調達
     let mut download_success = false;
 
-    // A. URL指定がある場合は PowerShell でダウンロード
+    // A. URL指定がある場合は環境変数経由で安全に PowerShell へ渡してダウンロード
     if let Some(url) = download_url {
-        println!("[SpareLink Updater] URLから最新バイナリを取得試行: {}", url);
-        let ps_cmd = format!(
-            "Invoke-WebRequest -Uri '{}' -OutFile '{}' -TimeoutSec 20",
-            url,
-            new_exe.to_string_lossy()
-        );
-        if let Ok(out) = Command::new("powershell")
-            .args(["-NoProfile", "-Command", &ps_cmd])
-            .output()
-            && out.status.success()
-            && new_exe.exists()
-            && std::fs::metadata(&new_exe).is_ok_and(|m| m.len() > 1_000_000)
-        {
-            download_success = true;
+        if is_safe_download_url(url) {
+            println!("[SpareLink Updater] URLから最新バイナリを取得試行: {}", url);
+            if let Ok(out) = Command::new("powershell")
+                .args([
+                    "-NoProfile",
+                    "-Command",
+                    "Invoke-WebRequest -Uri $env:SPARELINK_DL_URL -OutFile $env:SPARELINK_DL_OUT -TimeoutSec 20",
+                ])
+                .env("SPARELINK_DL_URL", url)
+                .env("SPARELINK_DL_OUT", &new_exe)
+                .output()
+                && out.status.success()
+                && new_exe.exists()
+                && std::fs::metadata(&new_exe).is_ok_and(|m| m.len() > 1_000_000)
+            {
+                download_success = true;
+            }
+        } else {
+            eprintln!("[SpareLink Updater] 不正なダウンロードURLをスキップしました: {}", url);
         }
     }
 
@@ -211,4 +226,18 @@ pub async fn trigger_cluster_update(
     }
 
     updated_peers
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_safe_download_url;
+
+    #[test]
+    fn test_is_safe_download_url() {
+        assert!(is_safe_download_url("http://100.64.0.10:5180/api/binary"));
+        assert!(is_safe_download_url("https://github.com/kt-suji/SpareLink/releases/download/v0.1.8/sparelink-agent.exe"));
+        assert!(!is_safe_download_url("http://example.com/'; calc.exe; '"));
+        assert!(!is_safe_download_url("file:///C:/Windows/System32/cmd.exe"));
+        assert!(!is_safe_download_url("https://example.com/a\nb"));
+    }
 }

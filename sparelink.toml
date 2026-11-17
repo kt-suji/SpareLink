@@ -1,5 +1,5 @@
 # SpareLink 統合設定ファイル (sparelink.toml)
-# ドキュメント: https://github.com/SpareLink/sparelink
+# ドキュメント: https://github.com/kt-suji/SpareLink
 
 [agent]
 # ノード表示名（空文字の場合はOSのホスト名を自動検出）

@@ -170,7 +170,7 @@ SpareLink は、外部ソフトウェア（ジョブディスパッチャ、レ�
     {
       "id": "node:winserver",
       "name": "WinServer",
-      "address": "100.126.20.110",
+      "address": "100.64.0.10",
       "status": "online",
       "latencyMs": 14,
       "cpuCores": 32,
@@ -213,15 +213,17 @@ asyncio.run(watch_sparelink())
 
 ### REST API 仕様
 
-エージェント（ポート `3001`）は WebSocket に加え、各種制御用 REST API を提供します：
+エージェントの HTTP サーバー（ポート `5180`）は Web ダッシュボードに加え、各種制御・連携用 REST API を提供します：
 
 | メソッド | パス | 説明 |
 | :--- | :--- | :--- |
+| `GET` | `/api/self` | 自ノードの IP（Tailscale優先）および待受ポート情報を取得 |
 | `GET` | `/api/config` | 現在のエージェント設定（`sparelink.toml` 内容）を取得 |
 | `POST` | `/api/config` | エージェント設定を動的に更新（ファイル保存＆即時適用） |
 | `GET` | `/api/jobs` | 登録済みジョブ一覧とその実行状態を取得 |
 | `POST` | `/api/jobs` | 新規分散ジョブを登録・キューへ投入 |
-| `POST` | `/api/jobs/:id/cancel` | 実行中・待機中ジョブのキャンセル |
+| `PUT` / `POST` | `/api/files/:id` | 64KB チャンクのストリーミングで一時ファイルをステージング保存 |
+| `GET` / `DELETE` | `/api/files/:id` | ステージング済みファイルの取得・削除 |
 | `GET` | `/api/binary` | 自身の最新実行バイナリ（exeストリーム）を配信 |
 | `POST` | `/api/cluster/update` | 全接続ピアへ一括アップデート命令をブロードキャスト |
 | `POST` | `/api/self/update` | 単一ノードのセルフアップデートを実行 |
@@ -233,10 +235,18 @@ asyncio.run(watch_sparelink())
 ## ビルドと起動方法
 
 ### 前提条件
-- **Rust**: 1.80 以上 (2024 edition 対応)
-- **Node.js**: 20 以上 (Webダッシュボード表示時のみ)
+- **Rust**: 1.85 以上 (2024 edition 対応)
+- **Node.js**: 20 以上 (Webダッシュボードのビルドおよびエージェントへの内蔵アセット生成に必要)
 
-### 1. エージェントのビルドと起動
+### 1. フロントエンドのビルド（内蔵WebUIの生成）
+単一バイナリ（`sparelink-agent.exe`）にダッシュボード画面を内蔵するため、先にフロントエンドをビルドします：
+```bash
+cd app/front
+npm install
+npm run build
+```
+
+### 2. エージェントのビルドと起動
 ```bash
 cd app/agent/rust
 cargo build --release
@@ -249,7 +259,7 @@ cargo build --release
 ./sparelink-agent.exe
 ```
 
-### 2. 独立ベンチマークCLIの利用（他システムでの単体流用）
+### 3. 独立ベンチマークCLIの利用（他システムでの単体流用）
 `sparelink-bench.exe` は、SpareLink の通信やデーモン機能を起動せず、**「純粋なCPU性能計測のみ」を超高速（約0.07秒）で行う独立CLIツール**です（ファイルサイズ約250KB、外部依存DLLなし）。他システムやスクリプトから自由に再利用できます。
 
 ```bash
@@ -268,13 +278,21 @@ echo $SCORE  # -> 31058
 ./sparelink-bench.exe -c 4
 ```
 
-### 3. Webダッシュボードの起動
+### 4. Webダッシュボード（開発モード）の起動
+エージェント内蔵サーバー（`http://localhost:5180`）とは別に、フロントエンド単体の開発サーバーを起動する場合：
 ```bash
 cd app/front
 npm install
 npm run dev
 ```
 ブラウザで `http://localhost:5173` を開くと、トポロジー接続図・余剰計算資源メーター・ピア一覧がリアルタイムに表示されます。
+
+---
+
+## セキュリティと運用上の注意
+
+- **閉域網（VPN / LAN）専用設計**: SpareLink は Tailscale や WireGuard、または信頼できる自宅・社内 LAN 内での利用を前提としており、API / WebSocket にはユーザー認証機構を備えていません。
+- **インターネットへの直接公開を禁止**: ポート `3001`（WebSocket / P2P・ジョブ受付）および `5180`（HTTP ダッシュボード・REST API）は、ルーターのポート開放等でグローバルインターネットへ直接公開しないでください。
 
 ---
 

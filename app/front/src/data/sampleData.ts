@@ -18,7 +18,7 @@ export const sampleSnapshot: NetworkSnapshot = {
       id: 'desktop-main',
       name: 'DESKTOP-MAIN',
       status: 'online',
-      address: '100.84.26.42',
+      address: '100.64.0.1',
       os: 'Windows 11 Pro',
       cpuCores: 16,
       memoryTotalGb: 32,

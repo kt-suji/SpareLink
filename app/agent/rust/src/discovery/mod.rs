@@ -35,7 +35,7 @@ pub struct DiscoveredPeer {
     pub id: String,
     /// 表示用PC名
     pub name: String,
-    /// 接続先IPアドレス（ポート除く、例: "100.126.20.110" や "10.0.0.2"）
+    /// 接続先IPアドレス（ポート除く、例: "100.64.0.10" や "10.0.0.2"）
     pub ip: String,
     /// SpareLink Agentの待受ポート (通常 3001)
     pub port: u16,

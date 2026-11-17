@@ -1,10 +1,6 @@
 use std::path::PathBuf;
 
-pub const EMBEDDED_INDEX_HTML: &[u8] = include_bytes!("../../../../front/dist/index.html");
-pub const EMBEDDED_FAVICON_SVG: &[u8] = include_bytes!("../../../../front/dist/favicon.svg");
-pub const EMBEDDED_ICONS_SVG: &[u8] = include_bytes!("../../../../front/dist/icons.svg");
-pub const EMBEDDED_JS: &[u8] = include_bytes!("../../../../front/dist/assets/index-lcp2xXp-.js");
-pub const EMBEDDED_CSS: &[u8] = include_bytes!("../../../../front/dist/assets/index-UFxAU9hj.css");
+include!(concat!(env!("OUT_DIR"), "/embedded_assets.rs"));
 
 pub fn get_content_type(path: &str) -> &'static str {
     if path.ends_with(".html") || path == "/" {

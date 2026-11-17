@@ -382,11 +382,17 @@ mod tests {
         let submitted = runner.submit_job(job).await.expect("submit failed");
         assert_eq!(submitted.assigned_node_id, Some("test-node".to_string()));
 
-        // 少し待機してジョブ完了を確認
-        tokio::time::sleep(tokio::time::Duration::from_millis(600)).await;
-        let all_jobs = runner.get_all_jobs().await;
-        assert_eq!(all_jobs.len(), 1);
-        assert_eq!(all_jobs[0].status, JobStatus::Completed);
-        assert!(all_jobs[0].stdout.contains("42"));
+        // 並列テスト実行下でもジョブ完了まで最大3秒ポーリングして確認
+        let mut completed_job = None;
+        for _ in 0..30 {
+            let all_jobs = runner.get_all_jobs().await;
+            if all_jobs.first().is_some_and(|j| j.status == JobStatus::Completed) {
+                completed_job = all_jobs.into_iter().next();
+                break;
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+        let job = completed_job.expect("job should reach Completed status");
+        assert!(job.stdout.contains("42"));
     }
 }
