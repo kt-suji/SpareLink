@@ -3,7 +3,7 @@ use std::path::PathBuf;
 pub const EMBEDDED_INDEX_HTML: &[u8] = include_bytes!("../../../../front/dist/index.html");
 pub const EMBEDDED_FAVICON_SVG: &[u8] = include_bytes!("../../../../front/dist/favicon.svg");
 pub const EMBEDDED_ICONS_SVG: &[u8] = include_bytes!("../../../../front/dist/icons.svg");
-pub const EMBEDDED_JS: &[u8] = include_bytes!("../../../../front/dist/assets/index-rlWIlU8X.js");
+pub const EMBEDDED_JS: &[u8] = include_bytes!("../../../../front/dist/assets/index-lcp2xXp-.js");
 pub const EMBEDDED_CSS: &[u8] = include_bytes!("../../../../front/dist/assets/index-UFxAU9hj.css");
 
 pub fn get_content_type(path: &str) -> &'static str {
@@ -34,10 +34,10 @@ pub fn try_read_file_from_disk(rel_path: &str) -> Option<Vec<u8>> {
     ];
 
     for path in &candidates {
-        if path.is_file() {
-            if let Ok(data) = std::fs::read(path) {
-                return Some(data);
-            }
+        if path.is_file()
+            && let Ok(data) = std::fs::read(path)
+        {
+            return Some(data);
         }
     }
     None

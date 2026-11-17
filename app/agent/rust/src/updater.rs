@@ -90,6 +90,23 @@ pub fn ensure_local_execution_if_needed() -> Result<bool, Box<dyn std::error::Er
     Ok(false)
 }
 
+/// 配布バイナリ (`sparelink-agent.exe`) の探索候補一覧を返す
+pub fn dist_binary_candidates(include_current_exe: bool) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if include_current_exe
+        && let Ok(cur) = std::env::current_exe()
+    {
+        paths.push(cur);
+    }
+    paths.extend([
+        PathBuf::from("dist-agent\\sparelink-agent.exe"),
+        PathBuf::from("..\\dist-agent\\sparelink-agent.exe"),
+        PathBuf::from("G:\\マイドライブ\\SpareLink\\dist-agent\\sparelink-agent.exe"),
+        PathBuf::from("G:\\My Drive\\SpareLink\\dist-agent\\sparelink-agent.exe"),
+    ]);
+    paths
+}
+
 /// 自エージェントのバイナリを最新版に更新し、再起動する
 pub async fn perform_self_update(
     download_url: Option<&str>,
@@ -111,42 +128,29 @@ pub async fn perform_self_update(
             url,
             new_exe.to_string_lossy()
         );
-        let output = Command::new("powershell")
+        if let Ok(out) = Command::new("powershell")
             .args(["-NoProfile", "-Command", &ps_cmd])
-            .output();
-
-        if let Ok(out) = output {
-            if out.status.success() && new_exe.exists() {
-                if let Ok(meta) = std::fs::metadata(&new_exe) {
-                    if meta.len() > 1_000_000 {
-                        download_success = true;
-                    }
-                }
-            }
+            .output()
+            && out.status.success()
+            && new_exe.exists()
+            && std::fs::metadata(&new_exe).is_ok_and(|m| m.len() > 1_000_000)
+        {
+            download_success = true;
         }
     }
 
-    // B. URLダウンロードが失敗または未指定の場合、Googleドライブなどの共有パスを探してコピー
+    // B. URLダウンロードが失敗または未指定の場合、共有パスや dist-agent からコピー
     if !download_success {
         println!("[SpareLink Updater] ローカル共有フォルダ (dist-agent) からの更新を試行します...");
-        let search_paths = [
-            PathBuf::from("G:\\マイドライブ\\SpareLink\\dist-agent\\sparelink-agent.exe"),
-            PathBuf::from("G:\\My Drive\\SpareLink\\dist-agent\\sparelink-agent.exe"),
-            PathBuf::from("dist-agent\\sparelink-agent.exe"),
-            PathBuf::from("..\\dist-agent\\sparelink-agent.exe"),
-        ];
-
-        for path in &search_paths {
-            if path.exists() && path != &current_exe {
-                if let Ok(meta) = std::fs::metadata(path) {
-                    if meta.len() > 1_000_000 {
-                        if std::fs::copy(path, &new_exe).is_ok() {
-                            download_success = true;
-                            println!("[SpareLink Updater] 共有パス {:?} から最新バイナリをコピーしました", path);
-                            break;
-                        }
-                    }
-                }
+        for path in dist_binary_candidates(false) {
+            if path.exists()
+                && path != current_exe
+                && std::fs::metadata(&path).is_ok_and(|m| m.len() > 1_000_000)
+                && std::fs::copy(&path, &new_exe).is_ok()
+            {
+                download_success = true;
+                println!("[SpareLink Updater] 共有パス {:?} から最新バイナリをコピーしました", path);
+                break;
             }
         }
     }

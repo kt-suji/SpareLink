@@ -22,7 +22,7 @@ export function Header({
       <div className="brand">
         <span className="brand-mark" aria-hidden="true" />
         <span className="brand-name">SpareLink</span>
-        <span className="brand-version">v0.1.7</span>
+        <span className="brand-version">v0.1.8</span>
       </div>
       <div className="titlebar-status">
         <span className="ts-item">

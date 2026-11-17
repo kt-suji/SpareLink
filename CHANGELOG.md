@@ -4,6 +4,16 @@
 
 ---
 
+## [v0.1.8] - 2026-11-12
+
+### 追加機能 (Added)
+- **共有フォルダ不要の HTTP ファイルステージング API (`web_server/file_store.rs`, `web_server/routes.rs`)**:
+  - `/api/files/<id>` (`PUT`/`POST`/`GET`/`DELETE`/`OPTIONS`) を新設し、64KB チャンクのストリーミング送受信で `%LOCALAPPDATA%\SpareLink\staging` へ一時ファイルを保存・配信（2時間 TTL 自動クリーンアップ・パストラバーサル対策付き）。
+  - `GET /api/self` を追加し、ローカルおよび Tailscale 経由の自ノード IP / ポートをプラグイン等の外部クライアントが自動解決できるように対応。
+  - 未知の `/api/*` パスに対して SPA HTML ではなく `404 Not Found` (JSON) を返すガードを追加。
+
+---
+
 ## [v0.1.7] - 2026-11-02
 
 ### 追加機能 (Added)
